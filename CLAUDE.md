@@ -51,11 +51,13 @@ src/
 - `balance-simulator` — симуляция тысяч забегов, отчёт `docs/balance-report.md` с рекомендациями.
 - `playtester` — Playwright-прогон на экране планшета, скриншоты, `docs/playtest/REPORT.md`.
 - `lore-writer` — тексты и лор в JSON, `docs/lore/BIBLE.md`.
+- `director` — контрольные точки: ревью брифа до запуска и работы после сдачи на соответствие идеям владельца, советы по оптимизации (`docs/feedback/reviews/`).
 - `producer` — анкеты мнений владельца → профиль предпочтений, бэклог, брифы агентам (`docs/feedback/`).
 
 ## Цикл итерации
 1. @producer готовит анкету → основная сессия задаёт вопросы владельцу (AskUserQuestion).
 2. @producer обрабатывает ответы → `docs/feedback/BACKLOG.md` и брифы `docs/feedback/briefs/*.md`.
-3. Исполнители по брифам: game-designer → coder → balance-simulator (замер) → game-designer (правка чисел) →
+3. @director проверяет брифы перед запуском; после сдачи каждого исполнителя — ревью работы.
+   Исполнители по брифам: game-designer → coder → balance-simulator (замер) → game-designer (правка чисел) →
    visual-artist / sound-composer / lore-writer.
 4. @playtester (скриншоты, ошибки) → @qa-reviewer: сборка, ревью, bump версии → коммит → пуш в `main` (автодеплой) → плейтест на планшете.
