@@ -55,20 +55,63 @@ export interface SpellDef {
   penalty?: SpellPenalty;
 }
 
+export type EnemyActionType = 'attack' | 'heavy' | 'block' | 'curse' | 'buff' | 'heal' | 'steal' | 'multi';
+
+/** Действие врага (схема — docs/balance.md). Поля зависят от type. */
+export interface EnemyAction {
+  type: EnemyActionType;
+  /** Урон одного удара (attack/heavy/multi/curse/steal) или величина (block/buff/heal). */
+  value?: number;
+  /** curse — сколько рун проклясть. */
+  count?: number;
+  /** steal — сколько золота украсть. */
+  gold?: number;
+  /** multi — число ударов. */
+  hits?: number;
+  /** weighted — вес выбора. */
+  weight?: number;
+}
+
+export interface EnemyActions {
+  mode: 'cycle' | 'weighted';
+  list: EnemyAction[];
+}
+
+export interface EnemyPhase {
+  /** Доля HP, при которой (и ниже) фаза включается. */
+  from: number;
+  title: string;
+  onEnter?: EnemyAction;
+  actions: EnemyActions;
+}
+
+export interface RageDef {
+  from: number;
+  step: number;
+}
+
 export interface EnemyDef {
   id: string;
   name: string;
+  trait?: string;
   hp: number;
-  attack: [number, number];
+  /** Устарело: [min,max] урона, только для совместимости. */
+  attack?: [number, number];
   reward: number;
   sprite: string;
   boss: boolean;
+  rage?: RageDef;
+  actions?: EnemyActions;
+  phases?: EnemyPhase[];
 }
 
-export type RouteNode =
+export type RouteNodeBase =
   | { type: 'enemy'; id: string }
   | { type: 'event'; id: string }
   | { type: 'campfire' };
+
+/** Точка маршрута-графа: next — индексы точек следующего слоя, куда можно пойти. */
+export type RouteNode = RouteNodeBase & { next?: number[] };
 
 export interface EventOutcome {
   gold?: number;

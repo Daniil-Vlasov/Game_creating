@@ -7,7 +7,7 @@ export interface Track { power: number; mult: number }
 /** Шаг подсчёта — для анимации (карта/слот подсвечивается, звук с растущим питчем). */
 export type ScoreStep =
   | { kind: 'base'; atk: Track; def: Track }
-  | { kind: 'card'; card: Card; toAtk: boolean; atk: Track; def: Track }
+  | { kind: 'card'; card: Card; toAtk: boolean; cursed: boolean; power: number; atk: Track; def: Track }
   | { kind: 'spell'; slot: number; spell: SpellDef; text: string; atk: Track; def: Track };
 
 export interface ScoreResult {
@@ -26,8 +26,9 @@ const snap = (t: Track): Track => ({ ...t });
  * Атака = (Сила атаки) × (Множ. атаки), Щит = (Сила щита) × (Множ. щита).
  * 1) база комбинации; 2) Сила каждой руны идёт в атаку (Огонь/Воздух) или щит (Земля/Вода);
  * 3) заклинания слева направо; 4) штрафы проклятых.
+ * Проклятые руны (cursedUids) дают Силу 0 в подсчёте, но комбинация определяется по настоящей Силе.
  */
-export function scorePlay(played: Card[], handLeft: number, spells: SpellDef[]): ScoreResult {
+export function scorePlay(played: Card[], handLeft: number, spells: SpellDef[], cursedUids?: ReadonlySet<number>): ScoreResult {
   const combo = detectCombo(played);
   const atk: Track = { power: combo.atkPower, mult: combo.atkMult };
   const def: Track = { power: combo.defPower, mult: combo.defMult };
@@ -35,8 +36,10 @@ export function scorePlay(played: Card[], handLeft: number, spells: SpellDef[]):
 
   for (const c of played) {
     const toAtk = isAttackElement(c.element);
-    (toAtk ? atk : def).power += c.power;
-    steps.push({ kind: 'card', card: c, toAtk, atk: snap(atk), def: snap(def) });
+    const cursed = cursedUids?.has(c.uid) ?? false;
+    const power = cursed ? 0 : c.power;
+    (toAtk ? atk : def).power += power;
+    steps.push({ kind: 'card', card: c, toAtk, cursed, power, atk: snap(atk), def: snap(def) });
   }
 
   const tracks = (t: Target): Track[] => (t === 'atk' ? [atk] : t === 'def' ? [def] : [atk, def]);

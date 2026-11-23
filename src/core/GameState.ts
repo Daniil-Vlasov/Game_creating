@@ -1,4 +1,4 @@
-import { ENEMIES, RARITIES, ROUTE, RULES, SHOP, SPELLS, enemyById } from './data';
+import { ENEMIES, RARITIES, ROUTE_LAYERS, RULES, SHOP, SPELLS, enemyById } from './data';
 import { createDeck } from './deck';
 import type { Card, EnemyDef, EventOutcome, Rarity, RouteNode, SpellDef } from './types';
 
@@ -7,8 +7,12 @@ export class GameState {
   hp = RULES.heroMaxHp;
   maxHp = RULES.heroMaxHp;
   gold = RULES.startGold;
-  /** Индекс текущей точки маршрута (к которой идём / на которой стоим). */
+  /** Слой маршрута-графа (глубина), к которому идём / на котором стоим. */
   node = 0;
+  /** Индекс выбранной точки в слое node (−1 — ещё не выбрана на развилке). */
+  choice = -1;
+  /** Индекс точки, пройденной в предыдущем слое (−1 — нет, доступен весь слой). */
+  prevChoice = -1;
   deck: Card[] = createDeck();
   spells: SpellDef[] = [];
   rerolls = 0;
@@ -17,26 +21,60 @@ export class GameState {
     Object.assign(this, new GameState());
   }
 
+  /** Число слоёв маршрута. */
+  get routeLength(): number {
+    return ROUTE_LAYERS.length;
+  }
+
+  private get layer(): RouteNode[] {
+    return ROUTE_LAYERS[Math.min(this.node, ROUTE_LAYERS.length - 1)];
+  }
+
+  /** Индексы точек текущего слоя, доступные с пройденной точки. */
+  get options(): number[] {
+    const layer = this.layer;
+    const prev = this.node > 0 && this.prevChoice >= 0 ? ROUTE_LAYERS[this.node - 1]?.[this.prevChoice] : undefined;
+    const idx = prev?.next?.filter((i) => i >= 0 && i < layer.length) ?? [];
+    return idx.length > 0 ? idx : layer.map((_, i) => i);
+  }
+
+  optionNode(i: number): RouteNode {
+    return this.layer[i];
+  }
+
+  /** Нужно ли выбирать путь на развилке перед текущим слоем. */
+  get needsChoice(): boolean {
+    return this.choice < 0 && this.options.length > 1;
+  }
+
+  choose(i: number): void {
+    this.choice = i;
+  }
+
   get current(): RouteNode {
-    return ROUTE[Math.min(this.node, ROUTE.length - 1)];
+    const i = this.choice >= 0 ? this.choice : this.options[0];
+    return this.layer[i] ?? this.layer[0];
   }
 
   get isLastNode(): boolean {
-    return this.node >= ROUTE.length - 1;
+    return this.node >= ROUTE_LAYERS.length - 1;
   }
 
-  /** 0 = лайт-фэнтези, 1 = дарк-фэнтези; плавно растёт с прогрессом (можно дробный индекс). */
+  /** 0 = лайт-фэнтези, 1 = дарк-фэнтези; плавно растёт с глубиной маршрута (можно дробный индекс слоя). */
   darknessAt(progress: number): number {
-    return Math.max(0, Math.min(1, progress / (ROUTE.length - 1)));
+    return Math.max(0, Math.min(1, progress / (ROUTE_LAYERS.length - 1)));
   }
 
   get darkness(): number {
     return this.darknessAt(this.node);
   }
 
-  get enemy(): EnemyDef {
-    const n = this.current;
+  enemyOf(n: RouteNode): EnemyDef {
     return n.type === 'enemy' ? enemyById(n.id) : ENEMIES[0];
+  }
+
+  get enemy(): EnemyDef {
+    return this.enemyOf(this.current);
   }
 
   get handSize(): number {
@@ -46,6 +84,8 @@ export class GameState {
   }
 
   advance(): void {
+    this.prevChoice = this.choice >= 0 ? this.choice : this.options[0];
+    this.choice = -1;
     this.node++;
     this.rerolls = 0;
   }

@@ -83,5 +83,14 @@
   "goldStolen": "−{g} золота",
   "phaseChange": "Новая фаза",
   "enemyHealed": "+{v} HP",
-  "turn": "Ход"
+  "turn": "Ход",
+  "combosButton": "?",
+  "combosTitle": "Созвучия рун",
+  "combosClose": "Коснись, чтобы закрыть",
+  "combosBase": "база",
+  "noHarmony": "Нет созвучия — руны звучат поодиночке",
+  "shieldBroken": "Щит пробит!",
+  "forkTitle": "Развилка",
+  "forkHint": "Выбери, куда идти дальше",
+  "routeDepth": "Шаг {n}/{t}"
 }

@@ -1,65 +1,141 @@
 {
-  "_note": "Атака врага объявляется заранее (намерение) и бьёт после каждого розыгрыша игрока; Щит игрока поглощает урон и сгорает в конце хода.",
+  "_doc": "Намерения врагов (схема — docs/balance.md). Враг объявляет действие заранее, выполняет его после каждого розыгрыша игрока, затем выбирает следующее. actions.mode: cycle — по кругу list[0..n]; weighted — случайно по weight, одна и та же запись не дважды подряд. Боссу вместо actions — phases (from = доля HP, при которой фаза включается; фазы только вперёд). Типы: attack{value}, heavy{value}, block{value}, curse{count,value?}, buff{value}, heal{value}, steal{gold,value}, multi{hits,value}. Урон каждого удара = value + buff + ярость. Поле attack — устаревшее, оставлено для совместимости (min/max урона действий).",
+  "pacing": {
+    "type": "rage",
+    "_doc": "Ярость: начиная с хода rage.from (ход = номер розыгрыша игрока, с 1) перед каждым действием врага его ярость растёт на rage.step и прибавляется к КАЖДОМУ удару (attack, heavy, multi — к каждому хиту, curse/steal — к их value). Не сбрасывается до конца боя.",
+    "default": { "from": 5, "step": 10 }
+  },
   "enemies": [
     {
       "id": "slime",
       "name": "Луговой слизень",
-      "hp": 80,
-      "attack": [
-        8,
-        12
-      ],
+      "trait": "Прячется в слизи и затягивает раны",
+      "hp": 450,
+      "attack": [35, 45],
       "reward": 6,
       "sprite": "slime",
-      "boss": false
+      "boss": false,
+      "rage": { "from": 5, "step": 10 },
+      "actions": {
+        "mode": "cycle",
+        "list": [
+          { "type": "attack", "value": 35 },
+          { "type": "block", "value": 80 },
+          { "type": "attack", "value": 45 },
+          { "type": "heal", "value": 60 }
+        ]
+      }
     },
     {
       "id": "goblin",
       "name": "Гоблин с тракта",
-      "hp": 150,
-      "attack": [
-        12,
-        18
-      ],
+      "trait": "Режет ножом и шарит по карманам",
+      "hp": 800,
+      "attack": [30, 90],
       "reward": 7,
       "sprite": "goblin",
-      "boss": false
+      "boss": false,
+      "rage": { "from": 5, "step": 20 },
+      "actions": {
+        "mode": "weighted",
+        "list": [
+          { "type": "attack", "value": 45, "weight": 3 },
+          { "type": "steal", "gold": 3, "value": 30, "weight": 2 },
+          { "type": "heavy", "value": 90, "weight": 1 }
+        ]
+      }
     },
     {
       "id": "wolf",
       "name": "Сумрачный волк",
-      "hp": 250,
-      "attack": [
-        18,
-        26
-      ],
+      "trait": "Рвёт сериями укусов, входит в раж",
+      "hp": 1000,
+      "attack": [30, 65],
       "reward": 8,
       "sprite": "wolf",
-      "boss": false
+      "boss": false,
+      "rage": { "from": 5, "step": 16 },
+      "actions": {
+        "mode": "cycle",
+        "list": [
+          { "type": "multi", "hits": 2, "value": 35 },
+          { "type": "buff", "value": 8 },
+          { "type": "multi", "hits": 3, "value": 30 },
+          { "type": "attack", "value": 65 }
+        ]
+      }
     },
     {
       "id": "wraith",
       "name": "Призрак кургана",
-      "hp": 380,
-      "attack": [
-        28,
-        40
-      ],
+      "trait": "Проклинает руны в твоей руке",
+      "hp": 1400,
+      "attack": [40, 130],
       "reward": 10,
       "sprite": "wraith",
-      "boss": false
+      "boss": false,
+      "rage": { "from": 5, "step": 12 },
+      "actions": {
+        "mode": "weighted",
+        "list": [
+          { "type": "curse", "count": 2, "value": 40, "weight": 3 },
+          { "type": "attack", "value": 75, "weight": 2 },
+          { "type": "block", "value": 250, "weight": 1 },
+          { "type": "heavy", "value": 130, "weight": 1 }
+        ]
+      }
     },
     {
       "id": "lich",
       "name": "Лич Пепельной башни",
-      "hp": 600,
-      "attack": [
-        42,
-        62
-      ],
+      "trait": "Проклятия, затем пепел и ярость",
+      "hp": 3600,
+      "attack": [30, 140],
       "reward": 20,
       "sprite": "lich",
-      "boss": true
+      "boss": true,
+      "rage": { "from": 9, "step": 15 },
+      "phases": [
+        {
+          "from": 1.0,
+          "title": "Шёпот праха",
+          "actions": {
+            "mode": "cycle",
+            "list": [
+              { "type": "curse", "count": 2, "value": 40 },
+              { "type": "attack", "value": 70 },
+              { "type": "curse", "count": 3, "value": 30 },
+              { "type": "block", "value": 300 }
+            ]
+          }
+        },
+        {
+          "from": 0.66,
+          "title": "Пепельный гнев",
+          "actions": {
+            "mode": "cycle",
+            "list": [
+              { "type": "attack", "value": 70 },
+              { "type": "heavy", "value": 120 },
+              { "type": "curse", "count": 2, "value": 45 },
+              { "type": "heavy", "value": 140 }
+            ]
+          }
+        },
+        {
+          "from": 0.33,
+          "title": "Ярость Лича",
+          "onEnter": { "type": "buff", "value": 15 },
+          "actions": {
+            "mode": "cycle",
+            "list": [
+              { "type": "multi", "hits": 3, "value": 35 },
+              { "type": "heavy", "value": 130 },
+              { "type": "heal", "value": 250 }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

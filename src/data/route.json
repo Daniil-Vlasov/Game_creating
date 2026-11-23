@@ -1,19 +1,19 @@
 {
-  "_doc": "Линейный маршрут забега. darkness плавно растёт от 0 (лайт-фэнтези: тракты, таверны) к 1 (дарк-фэнтези). Победа над врагом ведёт в магазин.",
-  "segmentLength": 900,
-  "nodes": [
-    { "type": "event",    "id": "tavern" },
-    { "type": "enemy",    "id": "slime" },
-    { "type": "campfire" },
-    { "type": "enemy",    "id": "goblin" },
-    { "type": "event",    "id": "bard" },
-    { "type": "enemy",    "id": "wolf" },
-    { "type": "event",    "id": "altar" },
-    { "type": "campfire" },
-    { "type": "enemy",    "id": "wraith" },
-    { "type": "event",    "id": "idol" },
-    { "type": "campfire" },
-    { "type": "enemy",    "id": "lich" }
+  "_doc": "Маршрут-граф забега. layers — слои по глубине (0 — старт, последний — босс). Каждая точка: { type: enemy|event|campfire, id?, next: [индексы точек СЛЕДУЮЩЕГО слоя] }. После точки игрок на развилке выбирает одну из next (если вариант один — развилки нет). Первый слой доступен целиком. darkness = индекс слоя / (число слоёв − 1): от лайт-фэнтези (тракты, таверны) к дарк-фэнтези. Победа над врагом ведёт в магазин. segmentLength — длина сегмента прогулки в пикселях мира (скорость героя 100 px/с). QA ?node=N — начать со слоя N.",
+  "segmentLength": 800,
+  "layers": [
+    [ { "type": "event", "id": "tavern", "next": [0, 1] } ],
+    [ { "type": "enemy", "id": "slime", "next": [0, 2] }, { "type": "event", "id": "bard", "next": [1, 2] } ],
+    [ { "type": "campfire", "next": [0, 1] }, { "type": "enemy", "id": "slime", "next": [0, 2] }, { "type": "enemy", "id": "goblin", "next": [1, 2] } ],
+    [ { "type": "enemy", "id": "goblin", "next": [0, 2] }, { "type": "event", "id": "altar", "next": [0, 1] }, { "type": "campfire", "next": [0, 1] } ],
+    [ { "type": "enemy", "id": "wolf", "next": [0, 2] }, { "type": "enemy", "id": "goblin", "next": [0, 1] }, { "type": "event", "id": "bard", "next": [0, 1] } ],
+    [ { "type": "campfire", "next": [0, 1] }, { "type": "enemy", "id": "wolf", "next": [1, 2] }, { "type": "event", "id": "altar", "next": [0, 2] } ],
+    [ { "type": "enemy", "id": "wolf", "next": [0, 1] }, { "type": "event", "id": "idol", "next": [0, 2] }, { "type": "campfire", "next": [0, 1] } ],
+    [ { "type": "enemy", "id": "wraith", "next": [0, 2] }, { "type": "campfire", "next": [0, 1] }, { "type": "enemy", "id": "wolf", "next": [1, 2] } ],
+    [ { "type": "event", "id": "idol", "next": [0, 1] }, { "type": "enemy", "id": "wraith", "next": [0, 1] }, { "type": "event", "id": "altar", "next": [0, 1] } ],
+    [ { "type": "enemy", "id": "wraith", "next": [0, 1] }, { "type": "campfire", "next": [1, 2] } ],
+    [ { "type": "campfire", "next": [0] }, { "type": "event", "id": "idol", "next": [0] }, { "type": "enemy", "id": "wraith", "next": [0] } ],
+    [ { "type": "enemy", "id": "lich", "next": [] } ]
   ],
   "poi": {
     "event":    { "name": "Событие",  "sprite": "poi-sign" },

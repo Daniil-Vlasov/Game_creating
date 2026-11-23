@@ -193,7 +193,19 @@ const ICONS: Record<string, { rows: string[]; colors: Record<string, string> }> 
   crown: { rows: ['.........', 'a...a...a', 'aa.aaa.aa', 'abaaaaaba', 'aaaaaaaaa', 'acacacaca', 'aaaaaaaaa', '.........', '.........'], colors: { a: '#e0b030', b: '#b03ad0', c: '#8a6010' } },
 };
 
-export const ELEMENT_ICON: Record<string, string> = { fire: 'flame', air: 'wind', earth: 'rock', water: 'drop' };
+// ---------- Иконки намерений врага (9x9) → ключи icon-intent-* ----------
+const INTENT_ICONS: Record<string, { rows: string[]; colors: Record<string, string> }> = {
+  'intent-attack': { rows: ['........a', '.......ab', '......ab.', '.....ab..', 'c...ab...', '.cbab....', '..cb.....', '.c.c.....', 'c........'], colors: { a: '#e8e8f0', b: '#8a8aa0', c: '#a06a2a' } },
+  'intent-heavy': { rows: ['.aaaaaaa.', 'abbbbbbba', 'abbcbbbba', 'abbbbbbba', '.aaaaaaa.', '....c....', '....c....', '....c....', '...ccc...'], colors: { a: '#6a0a0a', b: '#e03030', c: '#8a5a2a' } },
+  'intent-block': { rows: ['aaaaaaaaa', 'abbbcbbba', 'abbbcbbba', 'abcccccba', 'abbbcbbba', '.abbcbba.', '.abbcbba.', '..abcba..', '...aaa...'], colors: { a: '#2a3a6a', b: '#5a8ad0', c: '#c0e0ff' } },
+  'intent-curse': { rows: ['...aaa...', '..a...a..', '.a.bbb.a.', 'a.b...b.a', 'a.b.c.b.a', 'a.b..b..a', '.a.bb..a.', '..a...a..', '...aaa...'], colors: { a: '#7a3aaa', b: '#d080ff', c: '#ffffff' } },
+  'intent-buff': { rows: ['....a....', '...aba...', '..abbba..', '.abbbbba.', 'aaabbbaaa', '..abbba..', '..abbba..', '..abbba..', '..aaaaa..'], colors: { a: '#7a4a10', b: '#ffb030' } },
+  'intent-heal': { rows: ['...aaa...', '...aba...', '...aba...', 'aaaabaaaa', 'abbbbbbba', 'aaaabaaaa', '...aba...', '...aba...', '...aaa...'], colors: { a: '#1a5a2a', b: '#60e070' } },
+  'intent-steal': { rows: ['...a.a...', '....a....', '...aaa...', '..abbba..', '.abbcbba.', 'abbcccbba', 'abbbcbbba', 'abbbbbbba', '.aaaaaaa.'], colors: { a: '#4a2a10', b: '#a07040', c: '#ffd040' } },
+  'intent-multi': { rows: ['a..a..a..', 'a..a..a..', '.a..a..a.', '.a..a..a.', '.a..a..a.', '..a..a..a', '..a..a..a', '..b..b..b', '.........'], colors: { a: '#ffe0e0', b: '#e03030' } },
+};
+
+export const ELEMENT_ICON: Record<string, string> ={ fire: 'flame', air: 'wind', earth: 'rock', water: 'drop' };
 export const ELEMENT_COLOR: Record<string, number> = { fire: 0xe0603a, air: 0x7ec4e0, earth: 0xa07a3a, water: 0x3a7ad0 };
 
 // ---------- Точки интереса ----------
@@ -228,6 +240,7 @@ export function generateStaticTextures(scene: Phaser.Scene): void {
   HERO_LEGS.forEach((legs, i) => pixelTexture(scene, `hero-${i}`, [...HERO_TOP, ...legs], HERO_COLORS, SPRITE));
   for (const [id, a] of Object.entries(ENEMY_ART)) pixelTexture(scene, `enemy-${id}`, a.rows, a.colors, SPRITE);
   for (const [id, a] of Object.entries(ICONS)) pixelTexture(scene, `icon-${id}`, a.rows, a.colors, { outline: true });
+  for (const [id, a] of Object.entries(INTENT_ICONS)) pixelTexture(scene, `icon-${id}`, a.rows, a.colors, { outline: true });
   for (const [id, a] of Object.entries(POI_ART)) pixelTexture(scene, id, a.rows, a.colors, SPRITE);
   pixelTexture(scene, 'crow-0', ['a.....a', '.a...a.', '..aaa..', '...a...'], { a: '#1a1018' });
   pixelTexture(scene, 'crow-1', ['..aaa..', '.a.a.a.', 'a.....a'], { a: '#1a1018' });
