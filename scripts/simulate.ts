@@ -128,6 +128,7 @@ const rint = (n: number) => Math.floor(rng() * n);
 interface BattleRec { enemy: string; layer: number; turns: number; heroDmg: number; won: boolean; hpBefore: number; spells: number; maxHit: number; oneShotKill: boolean }
 interface ComboStat { n: number; atk: number; def: number }
 interface Stats {
+  name: string;
   runs: number;
   wins: number;
   deathLayer: Map<string, number>;
@@ -152,8 +153,8 @@ interface Stats {
   eventDeaths: number;
   hpAtLich: number[];
 }
-const newStats = (): Stats => ({
-  runs: 0, wins: 0, deathLayer: new Map(), battles: [], combos: new Map(), plays: 0, spellRuns: new Map(), spellAtLich: new Map(),
+const newStats = (name: string): Stats => ({
+  name, runs: 0, wins: 0, deathLayer: new Map(), battles: [], combos: new Map(), plays: 0, spellRuns: new Map(), spellAtLich: new Map(),
   lichFights: 0, lichWins: 0, forks: new Map(), nodeVisits: new Map(), fightsPerRun: [], winFights: [], eventRepeats: 0,
   runsWithRepeat: 0, winsWithRepeat: 0, goldAtEnd: [], spellsAtEnd: [], discardsUsed: 0, battleDeaths: 0, eventDeaths: 0, hpAtLich: [],
 });
@@ -346,7 +347,7 @@ function bestPlay(hand: Card[], st: GameState, foe: EnemyState, cursed: Set<numb
 
 interface BattleOut { won: boolean; turns: number; heroDmg: number; maxHit: number }
 
-function battle(st: GameState, p: Policy, S: Stats, layer: number): BattleOut {
+function battle(st: GameState, p: Policy, S: Stats): BattleOut {
   const foe = new EnemyState(st.enemy);
   const deck = new BattleDeck(st.deck);
   let hand: Card[] = deck.draw(st.handSize);
@@ -455,7 +456,7 @@ function runOnce(p: Policy, S: Stats): void {
         });
       }
       const spellsNow = st.spells.map((s) => s.id);
-      const out = battle(st, p, S, layer);
+      const out = battle(st, p, S);
       S.battles.push({ enemy: def.id, layer, turns: out.turns, heroDmg: out.heroDmg, won: out.won, hpBefore, spells: spellsNow.length, maxHit: out.maxHit, oneShotKill: out.won && out.turns === 1 });
       if (!out.won) { deathAt = `${layer}:${def.id}`; S.battleDeaths++; break; }
       if (def.boss) {
@@ -625,13 +626,12 @@ const SUMMARY_HEAD = ['| Политика | Винрейт | Боёв за за�
 
 // ---------------------------------------------------------------- main
 
-interface Named extends Stats { name: string }
-const results: Named[] = [];
+const results: Stats[] = [];
 const t0 = Date.now();
 for (const pn of POLICY_NAMES) {
   const p = POLICIES[pn];
   if (!p) { console.error(`Неизвестная политика ${pn}. Есть: ${Object.keys(POLICIES).join(', ')}`); process.exit(1); }
-  const S = { ...newStats(), name: pn } as Named;
+  const S = newStats(pn);
   for (let i = 0; i < RUNS; i++) {
     rng = mulberry32(SEED * 1_000_003 + i * 7919);
     runOnce(p, S);
