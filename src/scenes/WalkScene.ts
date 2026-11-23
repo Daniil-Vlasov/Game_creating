@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { Sound } from '../audio/SoundEngine';
 import { ROUTE_CFG, STR, eventById } from '../core/data';
-import { fmt } from '../core/enemyAI';
+import { fmt } from '../core/format';
 import { game } from '../core/GameState';
 import type { RouteNode } from '../core/types';
 import { backdrop } from '../ui/views';

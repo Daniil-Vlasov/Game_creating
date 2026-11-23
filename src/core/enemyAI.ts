@@ -1,4 +1,5 @@
 import { ENEMY_PACING, STR } from './data';
+import { fmt } from './format';
 import type { EnemyAction, EnemyActions, EnemyActionType, EnemyDef, RageDef } from './types';
 
 /**
@@ -70,11 +71,6 @@ export interface IntentView {
 const DAMAGING: ReadonlySet<EnemyActionType> = new Set(['attack', 'heavy', 'multi', 'curse', 'steal']);
 
 export const isDamaging = (a: EnemyAction): boolean => DAMAGING.has(a.type) && (a.value ?? 0) > 0;
-
-/** Подстановка {v} {n} {g} {t} в строку. */
-export function fmt(s: string, vars: Record<string, string | number>): string {
-  return s.replace(/\{(\w+)\}/g, (m, k: string) => (k in vars ? String(vars[k]) : m));
-}
 
 export class EnemyState {
   readonly def: EnemyDef;

@@ -4,8 +4,8 @@
     { "id": "lone",      "name": "Одинокая руна",   "desc": "Любые руны без созвучия",            "requirement": { "type": "any" },                                   "atkPower": 4,  "atkMult": 1, "defPower": 4,  "defMult": 1 },
     { "id": "resonance", "name": "Резонанс",        "desc": "2 руны одной стихии",               "requirement": { "type": "sameElement", "count": 2 },               "atkPower": 10, "atkMult": 2, "defPower": 10, "defMult": 2 },
     { "id": "ascension", "name": "Восхождение",     "desc": "3+ руны, Сила идёт подряд (3-4-5)",  "requirement": { "type": "sequence", "count": 3 },                  "atkPower": 30, "atkMult": 3, "defPower": 10, "defMult": 2 },
-    { "id": "triad",     "name": "Триада",          "desc": "3 руны одной стихии",               "requirement": { "type": "sameElement", "count": 3 },               "atkPower": 25, "atkMult": 3, "defPower": 20, "defMult": 3 },
-    { "id": "circle",    "name": "Круг стихий",     "desc": "Все 4 стихии в одном розыгрыше",    "requirement": { "type": "allElements" },                           "atkPower": 25, "atkMult": 3, "defPower": 25, "defMult": 3 },
+    { "id": "triad",     "name": "Триада",          "desc": "3 руны одной стихии",               "requirement": { "type": "sameElement", "count": 3 },               "atkPower": 25, "atkMult": 3, "defPower": 10, "defMult": 2 },
+    { "id": "circle",    "name": "Круг стихий",     "desc": "Все 4 стихии в одном розыгрыше",    "requirement": { "type": "allElements" },                           "atkPower": 25, "atkMult": 3, "defPower": 25, "defMult": 2 },
     { "id": "firestorm", "name": "Огненный смерч",  "desc": "2+ Огня и 2+ Воздуха",              "requirement": { "type": "elementPair", "a": "fire", "b": "air", "count": 2 },    "atkPower": 40, "atkMult": 4, "defPower": 5,  "defMult": 1 },
     { "id": "bastion",   "name": "Бастион",         "desc": "2+ Земли и 2+ Воды",                "requirement": { "type": "elementPair", "a": "earth", "b": "water", "count": 2 }, "atkPower": 5,  "atkMult": 1, "defPower": 45, "defMult": 4 }
   ]

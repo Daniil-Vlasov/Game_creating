@@ -28,6 +28,6 @@
     { "id": "dragonHeart",  "name": "Сердце дракона",     "rarity": "legendary", "price": 12, "icon": "heart",   "desc": "Множ. Атаки ×2",                              "effect": { "type": "mulMult", "target": "atk", "value": 2 } },
     { "id": "worldTree",    "name": "Мировое древо",      "rarity": "legendary", "price": 12, "icon": "tree",    "desc": "Множ. Атаки и Щита ×1.5",                     "effect": { "type": "mulMult", "target": "both", "value": 1.5 } },
     { "id": "bloodPact",    "name": "Кровавый пакт",      "rarity": "cursed",    "price": 7,  "icon": "skull",   "desc": "Множ. Атаки ×3. Проклятие: −3 HP за розыгрыш", "effect": { "type": "mulMult", "target": "atk", "value": 3 }, "penalty": { "type": "hpLossPerPlay", "value": 3 } },
-    { "id": "hollowCrown",  "name": "Пустая корона",      "rarity": "cursed",    "price": 7,  "icon": "crown",   "desc": "+4 Множ. Атаки и Щита. Проклятие: −1 карта в руке", "effect": { "type": "addMult", "target": "both", "value": 4 }, "penalty": { "type": "handSizeMinus", "value": 1 } }
+    { "id": "hollowCrown",  "name": "Пустая корона",      "rarity": "cursed",    "price": 7,  "icon": "crown",   "desc": "+3 Множ. Атаки и Щита. Проклятие: −1 карта в руке", "effect": { "type": "addMult", "target": "both", "value": 3 }, "penalty": { "type": "handSizeMinus", "value": 1 } }
   ]
 }
