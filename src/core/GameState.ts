@@ -1,4 +1,4 @@
-import { ENEMIES, RARITIES, ROUTE_LAYERS, RULES, SHOP, SPELLS, enemyById } from './data';
+import { ENEMIES, EVENTS, RARITIES, ROUTE_LAYERS, RULES, SHOP, SPELLS, enemyById } from './data';
 import { createDeck } from './deck';
 import type { Card, EnemyDef, EventOutcome, Rarity, RouteNode, SpellDef } from './types';
 
@@ -16,6 +16,10 @@ export class GameState {
   deck: Card[] = createDeck();
   spells: SpellDef[] = [];
   rerolls = 0;
+  /** id событий, уже пройденных в этом забеге (каждое событие — не чаще раза за забег). */
+  visitedEvents: string[] = [];
+  /** Сид забега для детерминированной подмены повторных событий (новый при reset()). */
+  runSeed = Math.floor(Math.random() * 0x7fffffff);
 
   reset(): void {
     Object.assign(this, new GameState());
@@ -38,8 +42,21 @@ export class GameState {
     return idx.length > 0 ? idx : layer.map((_, i) => i);
   }
 
+  /** Точка i текущего слоя — уже с подменой повторного события (её и показывать на развилке). */
   optionNode(i: number): RouteNode {
-    return this.layer[i];
+    return this.resolve(this.layer[i] ?? this.layer[0], i);
+  }
+
+  /**
+   * Событие не чаще одного раза за забег: уже посещённое событие подменяется ещё не посещённым из events.json
+   * (выбор детерминирован от сида забега, слоя, индекса точки и списка посещённых), а если все посещены — костром.
+   */
+  resolve(n: RouteNode, slot: number): RouteNode {
+    if (n.type !== 'event' || !this.visitedEvents.includes(n.id)) return n;
+    const fresh = EVENTS.filter((e) => !this.visitedEvents.includes(e.id));
+    if (fresh.length === 0) return { type: 'campfire', next: n.next };
+    const h = hashStr(`${this.runSeed}:${this.node}:${slot}:${this.visitedEvents.join(',')}`);
+    return { type: 'event', id: fresh[h % fresh.length].id, next: n.next };
   }
 
   /** Нужно ли выбирать путь на развилке перед текущим слоем. */
@@ -53,7 +70,7 @@ export class GameState {
 
   get current(): RouteNode {
     const i = this.choice >= 0 ? this.choice : this.options[0];
-    return this.layer[i] ?? this.layer[0];
+    return this.optionNode(i);
   }
 
   get isLastNode(): boolean {
@@ -84,6 +101,8 @@ export class GameState {
   }
 
   advance(): void {
+    const cur = this.current;
+    if (cur.type === 'event' && !this.visitedEvents.includes(cur.id)) this.visitedEvents.push(cur.id);
     this.prevChoice = this.choice >= 0 ? this.choice : this.options[0];
     this.choice = -1;
     this.node++;
@@ -174,6 +193,16 @@ export class GameState {
     }
     return pool[pool.length - 1];
   }
+}
+
+/** FNV-1a: стабильный хэш строки (детерминированный выбор без побочного расхода ГПСЧ). */
+function hashStr(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
 }
 
 export const game = new GameState();

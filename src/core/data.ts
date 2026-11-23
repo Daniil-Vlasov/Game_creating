@@ -19,7 +19,7 @@ export const ENEMIES = enemiesJson.enemies as unknown as EnemyDef[];
 export const ENEMY_PACING = enemiesJson.pacing as { type: string; default: RageDef };
 /** Маршрут-граф: слои по глубине; в каждой точке next — индексы точек следующего слоя. */
 export const ROUTE_LAYERS = routeJson.layers as unknown as RouteNode[][];
-export const ROUTE_CFG = { segmentLength: routeJson.segmentLength, poi: routeJson.poi, campfire: routeJson.campfire };
+export const ROUTE_CFG = { segmentLength: routeJson.segmentLength, walkCoins: routeJson.walkCoins, poi: routeJson.poi, campfire: routeJson.campfire };
 export const EVENTS = eventsJson.events as EventDef[];
 export const STR = stringsJson;
 

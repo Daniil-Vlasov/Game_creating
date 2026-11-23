@@ -71,8 +71,9 @@ export class WalkScene extends Phaser.Scene {
     } else this.buildPoi(game.current);
 
     this.coins = [];
-    for (let i = 0; i < 3; i++) {
-      const x = 180 + i * ((this.stopX - 220) / 3) + Math.random() * 60;
+    const coinCount = ROUTE_CFG.walkCoins.count;
+    for (let i = 0; i < coinCount; i++) {
+      const x = 180 + i * ((this.stopX - 220) / coinCount) + Math.random() * 60;
       const c = this.add.image(x, 338, 'icon-coin').setScale(1.5);
       this.tweens.add({ targets: c, y: 333, duration: 500, yoyo: true, repeat: -1, delay: i * 120 });
       this.coins.push(c);
@@ -147,9 +148,10 @@ export class WalkScene extends Phaser.Scene {
 
     for (const c of this.coins) {
       if (c.active && Math.abs(c.x - this.hero.x) < 14) {
-        game.gold += 1;
+        const value = ROUTE_CFG.walkCoins.value;
+        game.gold += value;
         Sound.coin();
-        floatText(this, c.x, c.y - 10, '+1', '#ffd860', 12);
+        floatText(this, c.x, c.y - 10, `+${value}`, '#ffd860', 12);
         c.destroy();
         this.refreshBar();
       }

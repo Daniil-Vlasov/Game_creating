@@ -1,7 +1,7 @@
 /**
  * Симулятор баланса «Тропы Рун» (Монте-Карло, без Phaser).
  * Импортирует только src/core/* и JSON из src/data/. Повторяет порядок хода BattleScene.playSelected/enemyTurn,
- * Walk (3 монеты на сегмент), Shop, Encounter (события/костёр).
+ * Walk (монеты сегмента — route.walkCoins), Shop, Encounter (события/костёр; повторные события подменяет GameState.resolve, как в игре).
  *
  * Запуск:  npm run sim -- --runs 2000 --policy all --seed 1 [--report docs/balance-report.md]
  * Флаги:
@@ -13,7 +13,6 @@
  *                       Примеры: enemies.lich.hp=3000  enemies.wolf.rage.step=12  route.campfire.healPercent=35
  *                                cards.rules.heroMaxHp=100  spells.dragonHeart.price=14  combinations.firestorm.atkPower=30
  *   --ban id1,id2       убрать заклинания из пула (абляция)
- *   --unique-events     эксперимент: повторное событие заменяется случайным ещё не посещённым (или пропуском)
  *   --aggr C            вес Атаки в оценке розыгрыша (по умолчанию 0.35 HP героя за 1 урон)
  *   --report FILE       записать markdown-отчёт
  *   --brief             короткий вывод (одна строка на политику)
@@ -28,7 +27,7 @@ import { GameState } from '../src/core/GameState';
 import { BattleDeck } from '../src/core/deck';
 import { EnemyState, isDamaging, pickCurseTargets } from '../src/core/enemyAI';
 import { scorePlay, type ScoreResult } from '../src/core/scoring';
-import { COMBOS, EVENTS, ROUTE_CFG, ROUTE_LAYERS, RULES, SHOP, SPELLS, enemyById, eventById } from '../src/core/data';
+import { COMBOS, ROUTE_CFG, ROUTE_LAYERS, RULES, SHOP, SPELLS, enemyById, eventById } from '../src/core/data';
 import type { Card, EventDef, RouteNode, SpellDef } from '../src/core/types';
 
 declare const process: { argv: string[]; exit(code: number): never };
@@ -53,7 +52,6 @@ for (let i = 0; i < argv.length; i++) {
 const RUNS = Number(opt.runs ?? 2000);
 const SEED = Number(opt.seed ?? 1);
 const AGGR = Number(opt.aggr ?? 0.35);
-const UNIQUE_EVENTS = opt['unique-events'] === 'true';
 const policyArg = opt.policy ?? 'all';
 const POLICY_NAMES = policyArg === 'all' ? ['random', 'greedy', 'smart'] : policyArg.split(',');
 
@@ -425,21 +423,22 @@ function battle(st: GameState, p: Policy, S: Stats): BattleOut {
 function runOnce(p: Policy, S: Stats): void {
   const st = new GameState();
   const everSpells = new Set<string>();
-  const seenEvents = new Set<string>();
   let fights = 0;
   let repeated = false;
   let deathAt: string | null = null;
   const noteSpells = () => st.spells.forEach((s) => everSpells.add(s.id));
 
   for (let layer = 0; layer < st.routeLength; layer++) {
-    // Walk: 3 монеты на сегменте
-    st.gold += 3;
+    // Walk: монеты сегмента (как в WalkScene)
+    st.gold += ROUTE_CFG.walkCoins.count * ROUTE_CFG.walkCoins.value;
     if (st.needsChoice) {
       const opts = st.options;
       st.choose(p.fork(st, opts));
       inc(S.forks, `${layer}:${st.choice}`);
     } else st.choose(st.options[0]);
-    const node = st.current;
+    const node = st.current; // уже с подменой повторного события (как в игре)
+    const raw = ROUTE_LAYERS[layer][st.choice];
+    if (raw.type === 'event' && (node.type !== 'event' || node.id !== raw.id)) { repeated = true; S.eventRepeats++; }
     inc(S.nodeVisits, `${layer}:${nodeKey(node)}`);
 
     if (node.type === 'enemy') {
@@ -466,17 +465,7 @@ function runOnce(p: Policy, S: Stats): void {
       st.applyVictory();
       if (!st.isLastNode) { st.rerolls = 0; p.shop(st, st.rollShop()); noteSpells(); }
     } else if (node.type === 'event') {
-      let ev = eventById(node.id);
-      if (seenEvents.has(ev.id)) {
-        repeated = true;
-        S.eventRepeats++;
-        if (UNIQUE_EVENTS) {
-          const fresh = EVENTS.filter((e) => !seenEvents.has(e.id));
-          if (fresh.length === 0) { st.advance(); continue; }
-          ev = fresh[rint(fresh.length)];
-        }
-      }
-      seenEvents.add(ev.id);
+      const ev = eventById(node.id);
       const o = ev.options[p.event(st, ev)];
       if (o.cost) st.gold -= o.cost;
       const success = o.chance === undefined || Math.random() < o.chance;
@@ -510,6 +499,38 @@ function runOnce(p: Policy, S: Stats): void {
 }
 
 // ---------------------------------------------------------------- анализ маршрута
+
+/**
+ * Правило графа (см. route.json/_doc): на любом пути в любых двух подряд идущих слоях, начиная со слоя 1, есть бой
+ * (≥ 1 боя на каждые 2 слоя, нет двух костров подряд), каждая точка достижима. Полный перебор путей.
+ */
+function routeRuleViolations(): string[] {
+  const L = ROUTE_LAYERS;
+  const bad: string[] = [];
+  const nextOf = (li: number, ni: number): number[] => {
+    const n = L[li][ni].next?.filter((i) => i >= 0 && i < (L[li + 1]?.length ?? 0)) ?? [];
+    return n.length || li === L.length - 1 ? n : L[li + 1].map((_, i) => i);
+  };
+  const reached = L.map((l) => l.map(() => false));
+  const walk = (li: number, ni: number, path: number[]): void => {
+    reached[li][ni] = true;
+    const p = [...path, ni];
+    if (li === L.length - 1) {
+      const nodes = p.map((n, i) => L[i][n]);
+      const last = nodes[nodes.length - 1];
+      if (last.type !== 'enemy' || !enemyById(last.id).boss) bad.push(`путь ${p.join('-')}: финал не босс`);
+      for (let i = 1; i + 1 < nodes.length; i++) {
+        if (nodes[i].type !== 'enemy' && nodes[i + 1].type !== 'enemy') bad.push(`путь ${p.join('-')}: слои ${i}–${i + 1} без боя`);
+        if (nodes[i].type === 'campfire' && nodes[i + 1].type === 'campfire') bad.push(`путь ${p.join('-')}: два костра подряд (${i}–${i + 1})`);
+      }
+      return;
+    }
+    for (const j of nextOf(li, ni)) walk(li + 1, j, p);
+  };
+  L[0].forEach((_, ni) => walk(0, ni, []));
+  reached.forEach((l, li) => l.forEach((r, ni) => { if (!r) bad.push(`точка ${li}:${ni} недостижима`); }));
+  return bad;
+}
 
 function routeAnalysis(): { minFights: number; maxFights: number; paths: number; minPath: string } {
   // DP по слоям: для каждой точки — мин/макс боёв до финала.
@@ -640,6 +661,8 @@ for (const pn of POLICY_NAMES) {
 }
 const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 const route = routeAnalysis();
+const routeBad = routeRuleViolations();
+if (routeBad.length) console.warn(`ВНИМАНИЕ: правило графа route.json нарушено (${routeBad.length}):\n  ${routeBad.slice(0, 10).join('\n  ')}`);
 
 if (opt.brief === 'true') {
   for (const S of results) {
@@ -652,13 +675,13 @@ if (opt.brief === 'true') {
   const lines: string[] = [];
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as { version: string };
   lines.push(`# Отчёт по балансу — «Тропа Рун» v${pkg.version}`, '');
-  lines.push(`Дата: ${new Date().toISOString().slice(0, 10)} · забегов на политику: ${RUNS} · сид: ${SEED} · aggr: ${AGGR}${UNIQUE_EVENTS ? ' · --unique-events' : ''}${sets.length ? ` · подмены: \`${sets.join(' ')}\`` : ''}${BANNED.length ? ` · без заклинаний: ${BANNED.join(', ')}` : ''} · время: ${elapsed} с`, '');
+  lines.push(`Дата: ${new Date().toISOString().slice(0, 10)} · забегов на политику: ${RUNS} · сид: ${SEED} · aggr: ${AGGR}${sets.length ? ` · подмены: \`${sets.join(' ')}\`` : ''}${BANNED.length ? ` · без заклинаний: ${BANNED.join(', ')}` : ''} · время: ${elapsed} с`, '');
   lines.push('Сгенерировано `npm run sim -- --runs ' + RUNS + ' --policy ' + policyArg + ' --seed ' + SEED + ' --report docs/balance-report.md`. Логика — `src/core/*`, данные — `src/data/*` (без Phaser).', '');
   lines.push('## 1. Сводка', '', ...SUMMARY_HEAD, ...results.map(summaryRow), '');
-  lines.push(`Маршрут: ${route.paths} путей; боёв на пути — от **${route.minFights}** до ${route.maxFights} (включая Лича). Путь с минимумом боёв: ${route.minPath}.`, '');
+  lines.push(`Маршрут: ${route.paths} путей; боёв на пути — от **${route.minFights}** до ${route.maxFights} (включая Лича). Путь с минимумом боёв: ${route.minPath}. Правило графа (бой в любых 2 слоях подряд, без двух костров подряд): ${routeBad.length ? `**нарушено ${routeBad.length}×**` : 'соблюдено на всех путях'}.`, '');
   for (const S of results) {
     lines.push(`## Политика \`${S.name}\``, '');
-    lines.push(`Винрейт **${pct(S.wins, S.runs)}** · боёв за забег ${f1(mean(S.fightsPerRun))} (у победителей ${f1(mean(S.winFights))}) · смертей в бою ${S.battleDeaths}, на событиях ${S.eventDeaths} · сбросов на бой ${f1(S.discardsUsed / Math.max(1, S.battles.length))} · HP перед Личем ${f1(mean(S.hpAtLich))} · повторы событий: ${pct(S.runsWithRepeat, S.runs)} забегов (винрейт в них ${pct(S.winsWithRepeat, S.runsWithRepeat)}).`, '');
+    lines.push(`Винрейт **${pct(S.wins, S.runs)}** · боёв за забег ${f1(mean(S.fightsPerRun))} (у победителей ${f1(mean(S.winFights))}) · смертей в бою ${S.battleDeaths}, на событиях ${S.eventDeaths} · сбросов на бой ${f1(S.discardsUsed / Math.max(1, S.battles.length))} · HP перед Личем ${f1(mean(S.hpAtLich))} · подмены повторных событий: ${pct(S.runsWithRepeat, S.runs)} забегов (винрейт в них ${pct(S.winsWithRepeat, S.runsWithRepeat)}).`, '');
     lines.push('### Где умирают', '', ...deathHist(S), '');
     lines.push('### Враги', '', ...enemyTable(S), '');
     lines.push('### Комбинации', '', ...comboTable(S), '');
