@@ -1,12 +1,13 @@
 import Phaser from 'phaser';
 import { Sound } from '../audio/SoundEngine';
-import { RULES, STR } from '../core/data';
+import { RARITIES, RULES, STR } from '../core/data';
 import { BattleDeck } from '../core/deck';
 import { EnemyState, fmt, pickCurseTargets, type EnemyEvent, type PhaseEvent } from '../core/enemyAI';
 import { game } from '../core/GameState';
-import { scorePlay, type ScoreResult } from '../core/scoring';
+import { scorePlay, type ScoreResult, type Track } from '../core/scoring';
 import type { Card, EnemyActionType } from '../core/types';
 import { openCombosOverlay } from '../ui/combosOverlay';
+import { type Plaque, ScoreRow, scoreTier } from '../ui/scoreBoard';
 import { backdrop, cardTable, cardView, spellView, type CardView, type SpellView } from '../ui/views';
 import { type Button, H, W, button, fadeTo, floatText, panel, topBar, txt } from '../ui/widgets';
 import { uiPalette } from '../visual/palette';
@@ -55,8 +56,9 @@ export class BattleScene extends Phaser.Scene {
   private enemyShieldText!: Phaser.GameObjects.Text;
   private shieldText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
-  private atkText!: Phaser.GameObjects.Text;
-  private defText!: Phaser.GameObjects.Text;
+  private atkRow!: ScoreRow;
+  private defRow!: ScoreRow;
+  private scoreHeads: Phaser.GameObjects.Text[] = [];
   private hintText!: Phaser.GameObjects.Text;
   private deckText!: Phaser.GameObjects.Text;
   private playBtn!: Button;
@@ -81,6 +83,7 @@ export class BattleScene extends Phaser.Scene {
     this.cursed = new Set();
     this.curseMarks = new Map();
     this.pendingCurse = 0;
+    this.tweens.timeScale = 1; // на случай рестарта сцены посреди хит-стопа
     this.foe = new EnemyState(e);
     this.shield = 0;
     this.discards = RULES.discardsPerBattle;
@@ -124,9 +127,14 @@ export class BattleScene extends Phaser.Scene {
     // Панель подсчёта
     panel(this, W / 2, 148, 230, 74, 0.9);
     const ui = uiPalette(d);
-    this.comboText = txt(this, W / 2, 124, STR.selectHint, 13, ui.text);
-    this.atkText = txt(this, W / 2, 146, '', 12, ATK_COLOR).setStroke('#000000', 2);
-    this.defText = txt(this, W / 2, 166, '', 12, DEF_COLOR).setStroke('#000000', 2);
+    this.comboText = txt(this, W / 2, 122, STR.selectHint, 13, ui.text);
+    // Плашки-счётчики: «⚔ [Сила] × [Множ.] = ИТОГ» и «⛨ [Сила] × [Множ.] = ИТОГ»
+    this.scoreHeads = [
+      txt(this, W / 2 - 56, 135, STR.power, 8, ui.textDim),
+      txt(this, W / 2 + 4, 135, STR.mult, 8, ui.textDim),
+    ];
+    this.atkRow = new ScoreRow(this, W / 2, 150, '⚔', ATK_COLOR);
+    this.defRow = new ScoreRow(this, W / 2, 171, '⛨', DEF_COLOR);
 
     // Колода и кнопки
     this.add.image(36, HAND_Y, 'card-back').setScale(0.8);
@@ -202,9 +210,8 @@ export class BattleScene extends Phaser.Scene {
     this.playBtn.setEnabled(cards.length > 0 && !this.busy);
     this.discardBtn.setLabel(`${STR.discard} (${this.discards})`).setEnabled(cards.length > 0 && this.discards > 0 && !this.busy);
     if (cards.length === 0) {
-      this.comboText.setText(STR.selectHint);
-      this.atkText.setText('');
-      this.defText.setText('');
+      this.comboText.setText(STR.selectHint).setScale(1);
+      this.setRowsVisible(false);
       this.hintText.setText('');
       return;
     }
@@ -216,10 +223,17 @@ export class BattleScene extends Phaser.Scene {
     this.hintText.setText(lone ? STR.noHarmony : r.combo.desc);
   }
 
-  private showScore(name: string, atk: { power: number; mult: number }, def: { power: number; mult: number }): void {
+  private showScore(name: string, atk: Track, def: Track): void {
     this.comboText.setText(name);
-    this.atkText.setText(`⚔ ${STR.attack}: ${atk.power} × ${atk.mult} = ${Math.round(atk.power * atk.mult)}`);
-    this.defText.setText(`⛨ ${STR.shield}: ${def.power} × ${def.mult} = ${Math.round(def.power * def.mult)}`);
+    this.setRowsVisible(true);
+    this.atkRow.set(atk);
+    this.defRow.set(def);
+  }
+
+  private setRowsVisible(on: boolean): void {
+    this.atkRow.setVisible(on);
+    this.defRow.setVisible(on);
+    this.scoreHeads.forEach((t) => t.setVisible(on));
   }
 
   private discardSelected(): void {
@@ -297,35 +311,174 @@ export class BattleScene extends Phaser.Scene {
     this.updatePreview();
   }
 
+  /**
+   * «Сок» подсчёта: плашки Сила/Множ. тикают и подпрыгивают, искры летят от рун и слотов к счётчикам,
+   * финал «Сила × Множ. = ИТОГ» бьёт крупным числом. Общая длительность ≲ 3 с при любом числе шагов.
+   */
   private async animateScore(r: ScoreResult, views: CardView[]): Promise<void> {
-    let tick = 0;
-    for (const step of r.steps) {
+    const steps = r.steps;
+    const total = steps.length;
+    const weight = (k: string) => (k === 'spell' ? 1.4 : k === 'base' ? 1.2 : 1);
+    const sumW = steps.reduce((acc, st) => acc + weight(st.kind), 0);
+    const unit = Phaser.Math.Clamp(1900 / sumW, 90, 230);
+    const zero: Track = { power: 0, mult: 0 };
+
+    this.comboText.setText(r.combo.name);
+    this.setRowsVisible(true);
+    this.atkRow.set(zero);
+    this.defRow.set(zero);
+    this.atkRow.total.setText('…');
+    this.defRow.total.setText('…');
+    let prevAtk: Track = zero;
+    let prevDef: Track = zero;
+
+    for (let i = 0; i < total; i++) {
+      const step = steps[i];
+      const dt = unit * weight(step.kind);
+      const travel = Math.round(dt * 0.45);
+      Sound.scoreRiser(i, total);
+      // какие плашки изменились на этом шаге
+      const changed: { plaque: Plaque; value: number }[] = [];
+      if (step.atk.power !== prevAtk.power) changed.push({ plaque: this.atkRow.power, value: step.atk.power });
+      if (step.atk.mult !== prevAtk.mult) changed.push({ plaque: this.atkRow.mult, value: step.atk.mult });
+      if (step.def.power !== prevDef.power) changed.push({ plaque: this.defRow.power, value: step.def.power });
+      if (step.def.mult !== prevDef.mult) changed.push({ plaque: this.defRow.mult, value: step.def.mult });
+      prevAtk = step.atk;
+      prevDef = step.def;
+
       if (step.kind === 'base') {
-        this.showScore(r.combo.name, step.atk, step.def);
-        this.tweens.add({ targets: this.comboText, scale: 1.25, duration: 120, yoyo: true });
+        this.comboText.setScale(1.5);
+        this.tweens.add({ targets: this.comboText, scale: 1, duration: 200, ease: 'Back.easeOut' });
+        changed.forEach((c) => c.plaque.tickTo(c.value, dt * 0.6));
       } else if (step.kind === 'card') {
         const v = views.find((x) => x.card === step.card);
-        if (v) {
-          this.tweens.add({ targets: v, y: v.y - 10, duration: 90, yoyo: true });
-          floatText(this, v.x, v.y - 44, `+${step.power}`, step.cursed ? CURSE_COLOR : step.toAtk ? ATK_COLOR : DEF_COLOR, 13);
-        }
-        this.showScore(r.combo.name, step.atk, step.def);
+        const row = step.toAtk ? this.atkRow : this.defRow;
+        if (v) this.tweens.add({ targets: v, y: v.y - 10, duration: 90, yoyo: true });
+        if (step.cursed) {
+          if (v) this.extinguish(v, step.card.power);
+          row.power.bump(0xa040e0, false);
+        } else if (v) {
+          floatText(this, v.x, v.y - 44, `+${step.power}`, step.toAtk ? ATK_COLOR : DEF_COLOR, 13);
+          const col = step.toAtk ? 0xff7a5a : 0x7ab8ff;
+          this.sparks({ x: v.x, y: v.y - 30 }, row.power.anchor, col, 5, travel);
+          this.time.delayedCall(travel, () => changed.forEach((c) => c.plaque.tickTo(c.value, dt * 0.5)));
+        } else changed.forEach((c) => c.plaque.tickTo(c.value, dt * 0.5));
       } else {
         const slot = this.slots[step.slot];
-        this.tweens.add({ targets: slot, scale: 1.35, angle: 8, duration: 110, yoyo: true });
-        this.cameras.main.flash(80, 255, 230, 150, false);
+        const rc = Phaser.Display.Color.HexStringToColor(RARITIES[step.spell.rarity].color).color;
+        this.slotFlash(slot, rc);
         floatText(this, slot.x, slot.y + 26, step.text, '#ffe070', 10);
         Sound.cast(step.slot);
-        this.showScore(r.combo.name, step.atk, step.def);
+        if (changed.length === 0) this.burst(slot.x, slot.y, rc, 8);
+        for (const c of changed) this.sparks({ x: slot.x, y: slot.y }, c.plaque.anchor, rc, 8, travel);
+        this.time.delayedCall(travel, () => changed.forEach((c) => c.plaque.tickTo(c.value, dt * 0.5, rc)));
       }
-      Sound.comboTick(tick++);
-      await this.wait(step.kind === 'spell' ? 320 : 200);
+      await this.wait(dt);
     }
-    this.tweens.add({ targets: [this.atkText, this.defText], scale: 1.2, duration: 140, yoyo: true });
-    await this.wait(250);
+
+    // Финал: «Сила × Множ. = ИТОГ»
+    const main = Math.max(r.attack, r.shield);
+    const tier = scoreTier(main);
+    const mainRow = r.attack >= r.shield ? this.atkRow : this.defRow;
+    const sideRow = mainRow === this.atkRow ? this.defRow : this.atkRow;
+    Sound.scoreImpact(main);
+    if (main > 0) await this.bigTotal(main, mainRow, tier);
+    mainRow.slam(mainRow === this.atkRow ? r.atk : r.def, tier);
+    sideRow.slam(sideRow === this.atkRow ? r.atk : r.def, 0, 70);
+    await this.wait(200 + tier * 60);
   }
 
+  /** Крупное число итога над панелью: удар, выдержка (длиннее на больших итогах), полёт в ряд. */
+  private async bigTotal(v: number, row: ScoreRow, tier: 0 | 1 | 2): Promise<void> {
+    const cx = W / 2;
+    const cy = 150;
+    const col = Phaser.Display.Color.HexStringToColor(row.color).color;
+    const glow = this.add.image(cx, cy, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(col).setDepth(79).setScale(0.5).setAlpha(0.9);
+    this.tweens.add({ targets: glow, scale: 2 + tier * 1.2, alpha: 0, duration: 380 + tier * 120, onComplete: () => glow.destroy() });
+    const size = [22, 30, 38][tier];
+    const t = txt(this, cx, cy, String(v), size, tier === 2 ? '#fff4d0' : row.color).setStroke('#000000', 4).setDepth(80);
+    if (tier === 2) t.setTint(0xffe070, 0xffe070, 0xff7a5a, 0xff7a5a);
+    t.setScale(0.3);
+    this.burst(cx, cy, col, 8 + tier * 10, 40 + tier * 30);
+    this.cameras.main.shake(120 + tier * 80, 0.002 + tier * 0.003);
+    if (tier === 2) this.cameras.main.flash(120, 255, 230, 160, false);
+    await this.tweenP({ targets: t, scale: 1, duration: 140, ease: 'Back.easeOut' });
+    if (tier > 0) this.tweens.add({ targets: t, angle: { from: -3, to: 3 }, duration: 50, yoyo: true, repeat: tier * 2 });
+    await this.wait(120 + tier * 150);
+    await this.tweenP({ targets: t, x: row.total.x, y: row.total.y, scale: 0.4, alpha: 0.2, duration: 150, ease: 'Cubic.easeIn' });
+    t.destroy();
+  }
+
+  /** Проклятая руна: её Сила вспыхивает фиолетовым и «гаснет» в 0, вверх уходит дымок. */
+  private extinguish(v: CardView, power: number): void {
+    const x = v.x;
+    const y = v.y - 44;
+    const t = txt(this, x, y, `+${power}`, 13, CURSE_COLOR).setStroke('#000000', 3).setDepth(100);
+    this.tweens.add({
+      targets: t, alpha: 0.2, duration: 45, yoyo: true, repeat: 2,
+      onComplete: () => {
+        this.tweens.add({ targets: t, scaleX: 1.6, scaleY: 0.1, alpha: 0, duration: 120, onComplete: () => t.destroy() });
+        const z = txt(this, x, y, '0', 15, CURSE_COLOR).setStroke('#000000', 3).setDepth(100).setScale(1.8);
+        this.tweens.add({ targets: z, scale: 1, duration: 140, ease: 'Back.easeOut' });
+        this.tweens.add({ targets: z, y: y - 18, alpha: 0, delay: 360, duration: 400, onComplete: () => z.destroy() });
+      },
+    });
+    for (let i = 0; i < 6; i++) {
+      const p = this.add.rectangle(x + Phaser.Math.Between(-14, 14), v.y - 10, 2, 2, i % 2 ? 0x5a1a7a : 0xa040e0).setDepth(99);
+      this.tweens.add({ targets: p, y: p.y - Phaser.Math.Between(20, 36), x: p.x + Phaser.Math.Between(-6, 6), alpha: 0, delay: i * 25, duration: 420, onComplete: () => p.destroy() });
+    }
+  }
+
+  /** Вспышка рамки слота цветом редкости. */
+  private slotFlash(slot: SpellView, color: number): void {
+    this.tweens.killTweensOf(slot);
+    slot.setScale(1.3).setAngle(6);
+    this.tweens.add({ targets: slot, scale: 1, angle: 0, duration: 200, ease: 'Back.easeOut' });
+    const frame = this.add.rectangle(slot.x, slot.y, 36, 36).setStrokeStyle(2, color).setDepth(55);
+    const glow = this.add.image(slot.x, slot.y, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(color).setDepth(54).setScale(0.6);
+    this.tweens.add({ targets: frame, scale: 1.6, alpha: 0, duration: 280, ease: 'Cubic.easeOut', onComplete: () => frame.destroy() });
+    this.tweens.add({ targets: glow, scale: 1.5, alpha: 0, duration: 320, onComplete: () => glow.destroy() });
+  }
+
+  /** Искры по дуге (квадратичная Безье) из точки к счётчику. */
+  private sparks(from: { x: number; y: number }, to: { x: number; y: number }, color: number, n: number, ms: number): void {
+    for (let i = 0; i < n; i++) {
+      const sz = i % 3 === 0 ? 3 : 2;
+      const sx = from.x + Phaser.Math.Between(-8, 8);
+      const sy = from.y + Phaser.Math.Between(-6, 6);
+      const mx = (sx + to.x) / 2 + Phaser.Math.Between(-50, 50);
+      const my = Math.min(sy, to.y) - Phaser.Math.Between(10, 40);
+      const p = this.add.rectangle(sx, sy, sz, sz, i % 2 ? 0xffffff : color).setDepth(60);
+      const k = { t: 0 };
+      this.tweens.add({
+        targets: k, t: 1, delay: i * 10, duration: Math.max(60, ms - i * 10), ease: 'Sine.easeIn',
+        onUpdate: () => {
+          const u = 1 - k.t;
+          p.setPosition(Math.round(u * u * sx + 2 * u * k.t * mx + k.t * k.t * to.x), Math.round(u * u * sy + 2 * u * k.t * my + k.t * k.t * to.y));
+        },
+        onComplete: () => p.destroy(),
+      });
+    }
+  }
+
+  /** Радиальный разлёт искр. */
+  private burst(x: number, y: number, color: number, n: number, radius = 30): void {
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.4;
+      const d = radius * (0.6 + Math.random() * 0.6);
+      const sz = i % 3 === 0 ? 3 : 2;
+      const p = this.add.rectangle(x, y, sz, sz, i % 2 ? 0xffffff : color).setDepth(81);
+      this.tweens.add({
+        targets: p, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * 0.7, alpha: 0,
+        duration: 260 + Math.random() * 200, ease: 'Cubic.easeOut', onComplete: () => p.destroy(),
+      });
+    }
+  }
+
+  /** Удар героя: тряска, хит-стоп и вспышка пропорционально итогу; крупное число урона. */
   private async heroStrike(attack: number): Promise<void> {
+    const tier = scoreTier(attack);
+    const w = Phaser.Math.Clamp((Math.log10(Math.max(1, attack)) - 1) / 2, 0, 1); // 10→0, 50→0.35, 300→0.74, 1000→1
     await this.tweenP({ targets: this.hero, x: 170, duration: 140, ease: 'Cubic.easeIn' });
     const r = this.foe.takeAttack(attack);
     if (r.absorbed > 0) floatText(this, this.enemy.x + 34, this.enemy.y - 110, `⛨ −${r.absorbed}`, DEF_COLOR, 12);
@@ -336,12 +489,31 @@ export class BattleScene extends Phaser.Scene {
     if (r.damage > 0) {
       Sound.hit(Math.min(2, 1 + r.damage / 300));
       this.enemy.setTintFill(0xffffff);
-      this.cameras.main.shake(120, Math.min(0.02, 0.004 + r.damage / 20000));
-      floatText(this, this.enemy.x, this.enemy.y - 90, `−${r.damage}`, ATK_COLOR, 20);
-      this.time.delayedCall(100, () => this.enemy.clearTint());
+      this.cameras.main.shake(140 + 220 * w, 0.004 + 0.014 * w);
+      if (attack >= 300) this.cameras.main.flash(80 + 60 * tier, 255, 240, 220, false);
+      const dmg = this.damageNumber(r.damage, tier);
+      this.burst(this.enemy.x, this.enemy.y - 40, 0xff7a5a, 6 + tier * 8, 30 + tier * 20);
+      // Хит-стоп: все твины почти замирают, камера продолжает трястись
+      this.tweens.timeScale = 0.02;
+      await this.wait(Math.round(60 + 60 * w));
+      this.tweens.timeScale = 1;
+      dmg();
+      this.time.delayedCall(60 + tier * 30, () => this.enemy.clearTint());
+      this.tweens.add({ targets: this.enemy, x: ENEMY_X + 4 + tier * 4, duration: 60, yoyo: true, ease: 'Cubic.easeOut' });
     } else Sound.block();
     this.updateEnemyUi();
     await this.tweenP({ targets: this.hero, x: 100, duration: 200, ease: 'Cubic.easeOut' });
+  }
+
+  /** Число урона над врагом: появляется крупным во время хит-стопа, после — оседает и уплывает. */
+  private damageNumber(dmg: number, tier: 0 | 1 | 2): () => void {
+    const size = [20, 28, 36][tier];
+    const y = this.enemy.y - 96;
+    const t = txt(this, this.enemy.x, y, `−${dmg}`, size, tier === 2 ? '#ffe070' : ATK_COLOR).setStroke('#000000', 4).setDepth(100).setScale(1.6);
+    return () => {
+      this.tweens.add({ targets: t, scale: 1, duration: 160, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: t, y: y - 26, alpha: 0, delay: 450 + tier * 200, duration: 500, ease: 'Cubic.easeIn', onComplete: () => t.destroy() });
+    };
   }
 
   /** Действие врага: события из core/enemyAI проигрываются по очереди. */
