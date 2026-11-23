@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { Sound } from '../audio/SoundEngine';
 import { game } from '../core/GameState';
 import { uiPalette } from '../visual/palette';
+import { buttonTexture, frameTexture } from '../visual/textures';
 import { buildLabel } from '../visual/pixelFont';
 
 export const W = 640;
@@ -41,9 +42,9 @@ export function button(
   const ui = uiPalette(game.darkness);
   const fill = color ?? ui.accent;
   const c = scene.add.container(x, y) as Button;
-  const shadow = scene.add.rectangle(0, 3, w, h, 0x000000, 0.35);
-  const bg = scene.add.rectangle(0, 0, w, h, fill).setStrokeStyle(2, ui.bar);
-  const t = txt(scene, 0, 0, label, 12, ui.accentText);
+  const bg = scene.add.image(0, 1, buttonTexture(scene, Math.round(w), Math.round(h), fill));
+  const shadow = scene.add.rectangle(0, 0, 1, 1, 0, 0);
+  const t = txt(scene, 0, 0, label, 12, ui.accentText).setStroke(ui.style === 'light' ? '#f6e8c8' : '#120a0e', 2);
   c.add([shadow, bg, t]);
   c.setSize(w, h);
   c.setInteractive({ useHandCursor: true });
@@ -52,13 +53,13 @@ export function button(
   c.on('pointerdown', () => {
     if (!enabled) return;
     pressed = true;
-    bg.y = 2;
+    bg.y = 3;
     t.y = 2;
   });
   const release = (fire: boolean) => {
     if (!pressed) return;
     pressed = false;
-    bg.y = 0;
+    bg.y = 1;
     t.y = 0;
     if (fire && enabled) {
       Sound.click();
@@ -79,9 +80,9 @@ export function button(
   return c;
 }
 
-export function panel(scene: Phaser.Scene, x: number, y: number, w: number, h: number, alpha = 0.95): Phaser.GameObjects.Rectangle {
+export function panel(scene: Phaser.Scene, x: number, y: number, w: number, h: number, alpha = 0.97): Phaser.GameObjects.Image {
   const ui = uiPalette(game.darkness);
-  return scene.add.rectangle(x, y, w, h, ui.panel, alpha).setStrokeStyle(2, ui.panelBorder);
+  return scene.add.image(x, y, frameTexture(scene, Math.round(w), Math.round(h), ui.style)).setAlpha(alpha);
 }
 
 /** Верхняя полоса: HP, золото, этап, версия билда, звук. Возвращает функцию обновления. */

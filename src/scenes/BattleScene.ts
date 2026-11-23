@@ -8,6 +8,7 @@ import type { Card } from '../core/types';
 import { backdrop, cardTable, cardView, spellView, type CardView, type SpellView } from '../ui/views';
 import { type Button, H, W, button, fadeTo, floatText, panel, topBar, txt } from '../ui/widgets';
 import { uiPalette } from '../visual/palette';
+import { addVignette, ambientTint, type Scenery } from '../visual/scenery';
 
 const TABLE_TOP = 232;
 const HAND_Y = 300;
@@ -39,6 +40,8 @@ export class BattleScene extends Phaser.Scene {
   private playBtn!: Button;
   private discardBtn!: Button;
   private refreshBar!: () => void;
+  private scenery!: Scenery;
+  private lantern!: Phaser.GameObjects.Image;
 
   constructor() {
     super('Battle');
@@ -58,7 +61,8 @@ export class BattleScene extends Phaser.Scene {
     this.discards = RULES.discardsPerBattle;
     this.deck = new BattleDeck(game.deck);
 
-    backdrop(this, d, 196, { fixed: true, height: 18 });
+    this.scenery = backdrop(this, d, 200, { bottom: TABLE_TOP, seed: 5 + game.node * 13, vignette: false });
+    addVignette(this, d, 5).setDisplaySize(W, TABLE_TOP + 6);
     cardTable(this, d, TABLE_TOP);
     this.refreshBar = topBar(this, `${e.boss ? '☠ ' : ''}${e.name}`);
 
@@ -69,14 +73,18 @@ export class BattleScene extends Phaser.Scene {
     }
 
     // Герой и враг
-    this.hero = this.add.image(100, 228, 'hero-0').setOrigin(0.5, 1).setScale(3);
-    this.shieldText = txt(this, 140, 200, '', 12, DEF_COLOR).setStroke('#000000', 3);
-    this.enemy = this.add.image(540, 228, `enemy-${e.sprite}`).setOrigin(0.5, 1).setScale(e.boss ? 5 : 4);
+    this.lantern = this.add.image(112, 206, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0xffc060).setScale(1.5).setAlpha(0.35 + d * 0.4);
+    this.tweens.add({ targets: this.lantern, scale: 1.65, duration: 160, yoyo: true, repeat: -1, repeatDelay: 90 });
+    this.hero = this.add.image(100, 222, 'hero-0').setOrigin(0.5, 1).setScale(2).setTint(ambientTint(d));
+    this.shieldText = txt(this, 100, 160, '', 12, DEF_COLOR).setStroke('#000000', 3);
+    const aura = this.add.image(540, 200, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(e.boss ? 0xb040ff : 0xff5050).setScale(2.6).setAlpha(0.18 + d * 0.3);
+    this.tweens.add({ targets: aura, alpha: aura.alpha * 0.6, duration: 1200, yoyo: true, repeat: -1 });
+    this.enemy = this.add.image(540, 222, `enemy-${e.sprite}`).setOrigin(0.5, 1).setScale(3).setTint(ambientTint(d * 0.6));
     this.tweens.add({ targets: this.enemy, scaleY: this.enemy.scaleY * 1.04, duration: 700, yoyo: true, repeat: -1 });
-    this.add.rectangle(540, 140, 104, 10, 0x000000, 0.7);
-    this.enemyBar = this.add.rectangle(489, 140, 100, 6, 0xe0485a).setOrigin(0, 0.5);
-    this.enemyHpText = txt(this, 540, 128, '', 10, '#ffffff').setStroke('#000000', 3);
-    this.intentText = txt(this, 540, 112, '', 11, '#ffb0a0').setStroke('#000000', 3);
+    this.add.rectangle(540, 112, 104, 10, 0x120a0e, 0.85).setStrokeStyle(1, 0x5a3a3a);
+    this.enemyBar = this.add.rectangle(489, 112, 100, 6, 0xd03a4a).setOrigin(0, 0.5);
+    this.enemyHpText = txt(this, 540, 112, '', 8, '#ffffff').setStroke('#000000', 3);
+    this.intentText = txt(this, 540, 96, '', 11, '#ffb0a0').setStroke('#000000', 3);
 
     // Панель подсчёта
     panel(this, W / 2, 148, 230, 74, 0.9);
@@ -96,6 +104,11 @@ export class BattleScene extends Phaser.Scene {
     this.updateEnemyUi();
     this.drawUp();
     this.updatePreview();
+  }
+
+  update(time: number): void {
+    this.scenery.update(0, time);
+    this.lantern.x = this.hero.x + 12;
   }
 
   // ---------------- рука ----------------
@@ -209,7 +222,7 @@ export class BattleScene extends Phaser.Scene {
     // Применение
     if (result.hpLoss > 0) {
       game.heal(-result.hpLoss);
-      floatText(this, this.hero.x, this.hero.y - 60, `−${result.hpLoss}`, '#d080ff');
+      floatText(this, this.hero.x, this.hero.y - 56, `−${result.hpLoss}`, '#d080ff');
       this.refreshBar();
     }
     this.shield = result.shield;
@@ -260,7 +273,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private async heroStrike(dmg: number): Promise<void> {
-    await this.tweenP({ targets: this.hero, x: 160, duration: 140, ease: 'Cubic.easeIn' });
+    await this.tweenP({ targets: this.hero, x: 170, duration: 140, ease: 'Cubic.easeIn' });
     Sound.hit(Math.min(2, 1 + dmg / 300));
     this.enemy.setTintFill(0xffffff);
     this.cameras.main.shake(120, Math.min(0.02, 0.004 + dmg / 20000));
@@ -335,7 +348,7 @@ export class BattleScene extends Phaser.Scene {
     this.busy = true;
     const ui = uiPalette(game.darkness);
     this.add.rectangle(0, 0, W, H, 0x000000, 0.55).setOrigin(0).setDepth(200).setInteractive();
-    panel(this, W / 2, H / 2, 300, 140).setDepth(201);
+    panel(this, W / 2, H / 2, 360, 140).setDepth(201);
     txt(this, W / 2, H / 2 - 36, title, 18, ui.text).setDepth(202);
     txt(this, W / 2, H / 2 - 6, sub, 12, ui.textDim).setDepth(202);
     button(this, W / 2, H / 2 + 38, 160, 30, btn, onClick).setDepth(202);

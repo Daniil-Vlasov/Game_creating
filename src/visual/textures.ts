@@ -1,80 +1,182 @@
 import Phaser from 'phaser';
-import { canvasTexture, pixelTexture } from './pixelArt';
-import { CARD_COLORS, envPalette, hex } from './palette';
+import { Pix, canvasTexture, pixelTexture } from './pixelArt';
+import { CARD_COLORS, lerpColor, shade } from './palette';
 
 /**
- * Процедурные пиксельные заглушки. Финальные спрайты заменят их с теми же ключами
- * и размерами (см. docs/ASSETS.md).
+ * Процедурные пиксельные заглушки (обводка + авто-светотень).
+ * Финальные спрайты заменят их с теми же ключами и размерами (см. docs/ASSETS.md).
  */
 
 export const CARD_W = 52;
 export const CARD_H = 72;
 
-// ---------- Герой (12x16, масштаб ×3 в сцене) ----------
+const SPRITE = { outline: true, shading: true };
+
+// ---------- Герой: странник с фонарём и красным шарфом (16x23 + обводка) ----------
 const HERO_TOP = [
-  '....hhhh....',
-  '...hhhhhh...',
-  '...hseses...',
-  '...hssssh...',
-  '....ssss....',
-  '..cctttcc...',
-  '.cctttttcc..',
-  '.cctttttccw.',
-  '.ccbbbbbccw.',
-  '.cctttttccw.',
-  '..ctttttc.w.',
+  '......CCCC......',
+  '.....CCCCCC.....',
+  '....CCCCCCCC....',
+  '....CCrrrrrrC...',
+  '....CrrsssssC...',
+  '....Crrssesss...',
+  '....CCrsssss....',
+  '.....CSSSSSs....',
+  '....CCSSSSSSC...',
+  '...CCCttttttCC..',
+  '...CCtttttttCC..',
+  '..CCCttttttttCC.',
+  '..CCCbbbgbbbbsh.',
+  '..CCCttttttttCw.',
+  '..CC.tttttttt.w.',
+  '..C..tttttttt..w',
 ];
-const HERO_LEGS_A = ['...ll.ll....', '...ll.ll....', '...ll.ll....', '...oo.oo....', '..ooo.ooo...'];
-const HERO_LEGS_B = ['...ll..ll...', '..ll...ll...', '..ll....ll..', '..oo....oo..', '.ooo....ooo.'];
+const HERO_LEGS = [
+  [
+    '.....pppppppL..w',
+    '.....ppp.pppLyL.',
+    '.....ppp.pppLyL.',
+    '.....ppp.ppp.L..',
+    '.....ppp.ppp....',
+    '.....ooo.ooo....',
+    '....oooo.oooo...',
+  ],
+  [
+    '.....pppppppL..w',
+    '....ppp..pppLyL.',
+    '...ppp....ppLyL.',
+    '...pp.....ppp...',
+    '..ppp......pp...',
+    '..ooo......ooo..',
+    '.oooo......oooo.',
+  ],
+];
 const HERO_COLORS = {
-  h: '#6a3a1a', s: '#f2c59a', e: '#2a1a10', c: '#2f5f9a', t: '#d8d0b8', b: '#7a4e2b', l: '#4a3a5a', o: '#3a2414', w: '#d0d8e8',
+  C: '#2e4a5e', r: '#6a3a1a', s: '#f0c090', e: '#1a1010', S: '#b0383a', t: '#c8b088', b: '#5a3a1a',
+  g: '#e0b030', h: '#a07a2a', w: '#d8e0ec', p: '#4a3a4a', o: '#3a2418', L: '#4a3a30', y: '#ffe070',
 };
 
-// ---------- Враги (16x16, масштаб ×4) ----------
+// ---------- Враги ----------
 const ENEMY_ART: Record<string, { rows: string[]; colors: Record<string, string> }> = {
   slime: {
     rows: [
-      '................', '................', '................', '................', '................',
-      '......gggg......', '....gggggggg....', '...gwwggggggg...', '..ggwgggggggggg.', '..ggggeggggeggg.',
-      '..ggggeggggeggg.', '.gggggggggggggg.', '.gggggggddggggg.', '.gggggggggggggg.', '..dddddddddddd..', '................',
+      '...........ll...........',
+      '..........gggg..........',
+      '.......gggggggggg.......',
+      '.....gggggggggggggg.....',
+      '....gggWWgggggggggggg...',
+      '...ggWWWgggggggggggggg..',
+      '...ggWWggggggggggggggg..',
+      '..gggggggggggggggggggggg',
+      '..ggggggEEggggggEEgggggg',
+      '..ggggggEwggggggEwgggggg',
+      '.gggggggEEggggggEEggggggg',
+      '.ggggggggggggggggggggggg',
+      '.gggggggggggMMMgggggggggg',
+      '.ggggggggggggggggggggggg',
+      '..gggggggggggggggggggggg',
+      '..dddgggggggggggggggddd.',
+      '....dddddddddddddddd....',
     ],
-    colors: { g: '#7ad06a', d: '#4a9a4a', w: '#e8ffe0', e: '#1a2a1a' },
+    colors: { g: '#6ac86a', d: '#3a8a4a', W: '#e8ffe0', E: '#1a2a1a', w: '#ffffff', M: '#2a4a2a', l: '#a0e060' },
   },
   goblin: {
     rows: [
-      '................', '...kk......kk...', '...kkkkkkkkkk...', '.....kkkkkk.....', '....kekkkkek....',
-      '....kkkkkkkk....', '.....kkmmkk.....', '......kkkk......', '....cccccccc....', '...kccccccccknd.',
-      '...kcccbbccck.d.', '....cccccccc..d.', '....cc....cc....', '....kk....kk....', '...kkk....kkk...', '................',
+      '.......kkkkk........',
+      '..k...kkkkkkk...k...',
+      '..kk.kkkkkkkkk.kk...',
+      '...kkkkkkkkkkkkk....',
+      '....kkEkkkkEkkk.....',
+      '....kkkkknkkkkk.....',
+      '.....kkMTMTMkk......',
+      '......kkkkkkk.......',
+      '.....HHHHHHHHH......',
+      '....HHHHHHHHHHHk....',
+      '...kHHHHbbHHHHHkd...',
+      '...kHHHHHHHHHHH.d...',
+      '...kkHHHHHHHHHH.d...',
+      '.....HHHHHHHHH..h...',
+      '.....pppp.pppp......',
+      '.....pp....pp.......',
+      '.....pp....pp.......',
+      '....kkk....kkk......',
     ],
-    colors: { k: '#7aa04a', e: '#e03020', m: '#3a2010', c: '#8a5a2a', b: '#c9a227', d: '#c0c8d0', n: '#5a3a1a' },
+    colors: { k: '#7aa04a', E: '#ffd030', n: '#4a6a2a', M: '#3a1010', T: '#f0f0e0', H: '#7a4a2a', b: '#c9a227', d: '#c8d0d8', h: '#5a3a1a', p: '#4a3a2a' },
   },
   wolf: {
     rows: [
-      '................', '................', '..f.f...........', '..fff...........', '.fefff..........',
-      'ffffffffffff....', '.nfffffffffff...', '..ffffffffffff..', '...fffffffffffff', '...fdffffffdff.f',
-      '...fd.....fdf...', '...fd.....fd....', '..ff.....ff.....', '................', '................', '................',
+      '..ff..........................',
+      '.fFff.........................',
+      '.fffff........................',
+      'fEffffff......................',
+      'ffffffffffffffffffff..........',
+      'nfffffffffffffffffffff........',
+      '.TTfffffffffffffffffffff......',
+      '..ffffffffffffffffffffffff.ff.',
+      '...fffffffffffffffffffffffff..',
+      '....ffff..ffffffffff.ffff.....',
+      '....ff....ff......ff..ff......',
+      '....ff....ff......ff..ff......',
+      '...fff...fff.....fff.fff......',
     ],
-    colors: { f: '#4a4a6a', d: '#2a2a40', e: '#f0d040', n: '#1a1a2a' },
+    colors: { f: '#5a5a7a', F: '#9a6a7a', E: '#ffe040', n: '#1a1a2a', T: '#f0f0f0' },
   },
   wraith: {
     rows: [
-      '......pppp......', '.....pppppp.....', '....pp.pp.pp....', '....pe.pp.ep....', '....pppppppp....',
-      '.....pp..pp.....', '....pppppppp....', '...pppppppppp...', '..ppsppppppspp..', '..pps.pppp.spp..',
-      '...s.pppppp.s...', '.....pppppp.....', '......pppp......', '.....pp..pp.....', '....p......p....', '................',
+      '.......pppppp.........',
+      '......pppppppp........',
+      '.....pppppppppp.......',
+      '.....ppEEppEEpp.......',
+      '.....ppEEppEEpp.......',
+      '.....pppppppppp.......',
+      '......ppp..ppp........',
+      '......pppppppp........',
+      '....HHHpppppppHHH.....',
+      '...HHHHHppppppHHHH....',
+      '..HHH.HHHHHHHHH.HHH...',
+      '..HH..HHHHHHHHH..HH...',
+      '.ccc..HHHHHHHHH..ccc..',
+      '.c.c..HHHHHHHHH..c.c..',
+      '......HHHHHHHHH.......',
+      '......HHHHHHHHH.......',
+      '.......HHHHHHH........',
+      '.......HH.HHHH........',
+      '........H.HH.H........',
+      '..........H...........',
     ],
-    colors: { p: '#b8c8d8', s: '#6a7a9a', e: '#60f0ff' },
+    colors: { p: '#c8d8e8', E: '#60f0ff', H: '#5a6a8a', c: '#c8d8e8' },
   },
   lich: {
     rows: [
-      '.....c.c.c......', '.....ccccc.....t', '.....bbbbb.....t', '.....beebb....tt', '.....bbbbb....t.',
-      '......bbb.....t.', '....rrrrrrr...t.', '...rrrrrrrrr.bt.', '..rrrgrrrgrrrbt.', '..rr.rrrrr.rr.t.',
-      '..r..rrrrr..r.t.', '.....rrrrr....t.', '....rrrrrrr...t.', '...rrrrrrrrr..t.', '...rrrrrrrrr....', '................',
+      '.....t...c..c..c..........',
+      '....ttt..cccccccc.........',
+      '.....t...cGccccGc.........',
+      '.....S....bbbbbb..........',
+      '.....S...bbbbbbbb.........',
+      '.....S...bEEbbEEb.........',
+      '.....S...bbbbbbbb.........',
+      '.....S....bbnnbb..........',
+      '.....S.....bbbb...........',
+      '.....S..rrrrrrrrrr........',
+      '.....S.rrrrrgrrrrrr.......',
+      '.....Sbrrrrrggrrrrrrr.....',
+      '.....bbrrr.rgrrrrr.rrr....',
+      '.....S....rrgrrrrr..rr....',
+      '.....S....rrgrrrrr..bb....',
+      '.....S....rrgrrrrr...b....',
+      '.....S....rrgrrrrr........',
+      '.....S...rrrgrrrrrr.......',
+      '.....S...rrrgrrrrrr.......',
+      '.....S..rrrrgrrrrrrr......',
+      '.....S..rrrrrrrrrrrr......',
+      '.....S.rrrrrrrrrrrrrr.....',
+      '.......rrrrrrrrrrrrrr.....',
     ],
-    colors: { c: '#e0b030', b: '#e8e0d0', e: '#ff3050', r: '#4a1a5a', g: '#9a4ac0', t: '#7a5a3a' },
+    colors: { c: '#e0b030', G: '#ff3060', b: '#e8e0d0', E: '#ff3050', n: '#3a3030', r: '#4a1a5a', g: '#c9a227', S: '#6a4a2a', t: '#b060ff' },
   },
 };
 
-// ---------- Иконки (9x9) мастей и заклинаний ----------
+// ---------- Иконки (9x9) стихий и заклинаний ----------
 const ICONS: Record<string, { rows: string[]; colors: Record<string, string> }> = {
   flame: { rows: ['....a....', '...aa....', '...aba...', '..abba.a.', '.abbbbaa.', '.abbcbba.', 'abbcccbba', '.abcccba.', '..aaaaa..'], colors: { a: '#c0301a', b: '#f08030', c: '#ffe060' } },
   wind: { rows: ['.........', '..aaaa...', '.....a...', 'aaaaaa.b.', '.........', 'bbbbbbbb.', '........b', '..aaaaab.', '.........'], colors: { a: '#e0f4ff', b: '#7ec4e0' } },
@@ -88,161 +190,191 @@ const ICONS: Record<string, { rows: string[]; colors: Record<string, string> }> 
   heart: { rows: ['.........', '.aa...aa.', 'abba.abba', 'abbbabbba', 'abbbbbbba', '.abbbbba.', '..abbba..', '...aba...', '....a....'], colors: { a: '#5a0a1a', b: '#e03040' } },
   tree: { rows: ['..aaaaa..', '.aabaaba.', 'aabaaaaba', 'aaaabaaaa', '.aaaaaaa.', '...ccc...', '....c....', '...ccc...', '..c.c.c..'], colors: { a: '#3a9a4a', b: '#8ae070', c: '#7a4e2b' } },
   skull: { rows: ['..aaaaa..', '.aaaaaaa.', 'aaaaaaaaa', 'ab..a..ba', 'aa..a..aa', '.aaa.aaa.', '..aaaaa..', '..a.a.a..', '.........'], colors: { a: '#e8e0d0', b: '#b03ad0' } },
-  crown: { rows: ['.........', 'a...a...a', 'aa.aaa.aa', 'abaaaaaba', 'aaaaaaaaa', 'acacacaca', 'aaaaaaaaa', '.........', '.........'], colors: { a: '#a08030', b: '#b03ad0', c: '#5a4010' } },
+  crown: { rows: ['.........', 'a...a...a', 'aa.aaa.aa', 'abaaaaaba', 'aaaaaaaaa', 'acacacaca', 'aaaaaaaaa', '.........', '.........'], colors: { a: '#e0b030', b: '#b03ad0', c: '#8a6010' } },
 };
 
-/** Иконка стихии по id стихии. */
 export const ELEMENT_ICON: Record<string, string> = { fire: 'flame', air: 'wind', earth: 'rock', water: 'drop' };
+export const ELEMENT_COLOR: Record<string, number> = { fire: 0xe0603a, air: 0x7ec4e0, earth: 0xa07a3a, water: 0x3a7ad0 };
 
-// ---------- Точки интереса на тропе (16x16, масштаб ×3) ----------
+// ---------- Точки интереса ----------
 const POI_ART: Record<string, { rows: string[]; colors: Record<string, string> }> = {
   'poi-sign': {
     rows: ['................', '..aaaaaaaaaaaa..', '..abbbbbbbbbba..', '..ab.cc.cc.cba..', '..abbbbbbbbbba..', '..ab.ccc.cc.ba..', '..abbbbbbbbbba..', '..aaaaaaaaaaaa..',
-      '.......dd.......', '.......dd.......', '.......dd.......', '.......dd.......', '.......dd.......', '......dddd......', '.....eeeeee.....', '................'],
+      '.......dd.......', '.......dd.......', '.......dd.......', '.......dd.......', '.......dd.......', '......dddd......', '.....eeeeee.....'],
     colors: { a: '#4a2a10', b: '#c09050', c: '#3a2010', d: '#6a4a2a', e: '#3a6a2a' },
   },
   'poi-fire': {
-    rows: ['................', '.......a........', '......aa........', '......aba..a....', '.....abba.aa....', '....abbbbaba....', '....abbcbbba....', '...abbcccbba....', '...abcccccba....',
-      '....abcccba.....', '..dddaaaaaddd...', '.ddeedddddeedd..', '..ddddeeedddd...', '................', '................', '................'],
+    rows: ['.......a........', '......aa........', '......aba..a....', '.....abba.aa....', '....abbbbaba....', '....abbcbbba....', '...abbcccbba....', '...abcccccba....',
+      '....abcccba.....', '..dddaaaaaddd...', '.ddeedddddeedd..', '..ddddeeedddd...'],
     colors: { a: '#c0301a', b: '#f08030', c: '#ffe060', d: '#5a3a1a', e: '#8a5a2a' },
   },
   'poi-skull': {
-    rows: ['................', '.....aaaaaa.....', '....aaaaaaaa....', '...aaaaaaaaaa...', '...ab..aa..ba...', '...a...aa...a...', '...aaaaaaaaaa...', '....aaa..aaa....', '.....aaaaaa.....',
-      '.....a.a.a.a....', '.......cc.......', '.......cc.......', '.......cc.......', '.......cc.......', '......cccc......', '................'],
+    rows: ['.....aaaaaa.....', '....aaaaaaaa....', '...aaaaaaaaaa...', '...ab..aa..ba...', '...a...aa...a...', '...aaaaaaaaaa...', '....aaa..aaa....', '.....aaaaaa.....',
+      '.....a.a.a.a....', '.......cc.......', '.......cc.......', '.......cc.......', '.......cc.......', '......cccc......'],
     colors: { a: '#e8e0d0', b: '#e03040', c: '#5a4a3a' },
+  },
+  'poi-tavern': {
+    rows: [
+      '..........cc..........', '..........cc..........', '......RRRRRRRRRR......', '.....RRRRRRRRRRRR.....', '....RRRRRRRRRRRRRR....',
+      '...RRRRRRRRRRRRRRRR...', '..RRRRRRRRRRRRRRRRRR..', '...wwwwwwwwwwwwwwww...', '...wbbwwwwwwwwwbbww...', '...wyywwwwddwwwyyww.s.',
+      '...wyywwwwddwwwyywwsS.', '...wwwwwwwddwwwwwww.s.', '...wwwwwwwddwwwwwww...', '...wwwwwwwddwwwwwww...', '..ggggggggggggggggggg.',
+    ],
+    colors: { R: '#a04a3a', w: '#d8c8a8', b: '#6a4a2a', y: '#ffd860', d: '#6a4a2a', c: '#6a5a5a', s: '#4a3a30', S: '#c9a227', g: '#4a8a3a' },
   },
 };
 
-/** Генерирует все статичные текстуры (вызывается в BootScene). */
+/** Генерирует все статичные текстуры (BootScene). */
 export function generateStaticTextures(scene: Phaser.Scene): void {
-  pixelTexture(scene, 'hero-0', [...HERO_TOP, ...HERO_LEGS_A], HERO_COLORS);
-  pixelTexture(scene, 'hero-1', [...HERO_TOP, ...HERO_LEGS_B], HERO_COLORS);
-  for (const [id, a] of Object.entries(ENEMY_ART)) pixelTexture(scene, `enemy-${id}`, a.rows, a.colors);
-  for (const [id, a] of Object.entries(ICONS)) pixelTexture(scene, `icon-${id}`, a.rows, a.colors);
-  for (const [id, a] of Object.entries(POI_ART)) pixelTexture(scene, id, a.rows, a.colors);
+  HERO_LEGS.forEach((legs, i) => pixelTexture(scene, `hero-${i}`, [...HERO_TOP, ...legs], HERO_COLORS, SPRITE));
+  for (const [id, a] of Object.entries(ENEMY_ART)) pixelTexture(scene, `enemy-${id}`, a.rows, a.colors, SPRITE);
+  for (const [id, a] of Object.entries(ICONS)) pixelTexture(scene, `icon-${id}`, a.rows, a.colors, { outline: true });
+  for (const [id, a] of Object.entries(POI_ART)) pixelTexture(scene, id, a.rows, a.colors, SPRITE);
+  pixelTexture(scene, 'crow-0', ['a.....a', '.a...a.', '..aaa..', '...a...'], { a: '#1a1018' });
+  pixelTexture(scene, 'crow-1', ['..aaa..', '.a.a.a.', 'a.....a'], { a: '#1a1018' });
 
-  // Лицевая сторона карты
-  canvasTexture(scene, 'card', CARD_W, CARD_H, (ctx) => {
-    ctx.fillStyle = CARD_COLORS.border;
-    ctx.fillRect(1, 0, CARD_W - 2, CARD_H);
-    ctx.fillRect(0, 1, CARD_W, CARD_H - 2);
-    ctx.fillStyle = CARD_COLORS.parchment;
-    ctx.fillRect(2, 2, CARD_W - 4, CARD_H - 4);
-    ctx.fillStyle = CARD_COLORS.parchmentShade;
-    ctx.fillRect(2, CARD_H - 6, CARD_W - 4, 4);
-    for (let i = 0; i < 40; i++) ctx.fillRect(3 + ((i * 37) % (CARD_W - 6)), 3 + ((i * 53) % (CARD_H - 10)), 1, 1);
-    ctx.fillStyle = CARD_COLORS.gold;
-    ctx.fillRect(4, 4, 3, 1); ctx.fillRect(4, 4, 1, 3);
-    ctx.fillRect(CARD_W - 7, CARD_H - 5, 3, 1); ctx.fillRect(CARD_W - 5, CARD_H - 7, 1, 3);
-  });
+  for (const el of Object.keys(ELEMENT_COLOR)) cardFace(scene, `card-${el}`, ELEMENT_COLOR[el]);
+  cardBack(scene);
 
-  // Рубашка карты
-  canvasTexture(scene, 'card-back', CARD_W, CARD_H, (ctx) => {
-    ctx.fillStyle = CARD_COLORS.border;
-    ctx.fillRect(0, 0, CARD_W, CARD_H);
-    ctx.fillStyle = CARD_COLORS.back;
-    ctx.fillRect(2, 2, CARD_W - 4, CARD_H - 4);
-    ctx.fillStyle = CARD_COLORS.backPattern;
-    for (let y = 4; y < CARD_H - 4; y += 4) for (let x = 4 + ((y / 4) % 2) * 2; x < CARD_W - 4; x += 4) ctx.fillRect(x, y, 2, 2);
-    ctx.fillStyle = CARD_COLORS.gold;
-    ctx.fillRect(CARD_W / 2 - 6, CARD_H / 2 - 6, 12, 12);
-    ctx.fillStyle = CARD_COLORS.back;
-    ctx.fillRect(CARD_W / 2 - 4, CARD_H / 2 - 4, 8, 8);
-  });
-
-  // Подсветка выбранной карты
-  canvasTexture(scene, 'card-glow', CARD_W + 6, CARD_H + 6, (ctx) => {
-    ctx.fillStyle = '#ffe070';
-    ctx.fillRect(0, 2, CARD_W + 6, CARD_H + 2);
-    ctx.fillRect(2, 0, CARD_W + 2, CARD_H + 6);
-  });
-
-  // Слот заклинания
-  canvasTexture(scene, 'slot', 36, 36, (ctx) => {
-    ctx.fillStyle = '#1a1018';
-    ctx.fillRect(0, 0, 36, 36);
-    ctx.fillStyle = '#5a4a3a';
-    ctx.fillRect(1, 1, 34, 34);
-    ctx.fillStyle = '#2a2026';
-    ctx.fillRect(3, 3, 30, 30);
-  });
-
-  // Частица
-  canvasTexture(scene, 'px', 2, 2, (ctx) => {
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, 2, 2);
-  });
-}
-
-/**
- * Текстуры окружения зависят от «тьмы» этапа — пересоздаются при каждом входе в сцену.
- * env-mountains: 320x90 (тайлится по X), env-trees: 256x80, env-ground: 64x48.
- */
-export function generateEnvTextures(scene: Phaser.Scene, darkness: number): void {
-  const p = envPalette(darkness);
-
-  canvasTexture(scene, 'env-mountains', 320, 90, (ctx) => {
-    const layer = (color: number, base: number, amp: number, phase: number) => {
-      ctx.fillStyle = hex(color);
-      for (let x = 0; x < 320; x += 2) {
-        const a = (x / 320) * Math.PI * 2;
-        const h = base + amp * (0.55 * Math.sin(a * 2 + phase) + 0.3 * Math.sin(a * 5 + phase * 2) + 0.15 * Math.sin(a * 11));
-        const top = Math.round((90 - h) / 2) * 2;
-        ctx.fillRect(x, top, 2, 90 - top);
-      }
-    };
-    layer(p.mountainFar, 60, 22, 0.3);
-    layer(p.mountainNear, 38, 16, 1.7);
-    if (darkness < 0.4) {
-      // снежные шапки на светлых этапах
-      ctx.fillStyle = '#f4f8ff';
-      for (let x = 0; x < 320; x += 2) {
-        const a = (x / 320) * Math.PI * 2;
-        const h = 60 + 22 * (0.55 * Math.sin(a * 2 + 0.3) + 0.3 * Math.sin(a * 5 + 0.6) + 0.15 * Math.sin(a * 11));
-        if (h > 72) ctx.fillRect(x, Math.round((90 - h) / 2) * 2, 2, 4);
-      }
+  canvasTexture(scene, 'card-glow', CARD_W + 8, CARD_H + 8, (p) => {
+    for (let y = 0; y < CARD_H + 8; y++) for (let x = 0; x < CARD_W + 8; x++) {
+      const dx = Math.min(x, CARD_W + 7 - x), dy = Math.min(y, CARD_H + 7 - y);
+      const dd = Math.min(dx, dy);
+      if (dd < 4) p.px(x, y, 0xffe070, dd < 1 ? 0.35 : dd < 2 ? 0.6 : dd < 3 ? 0.85 : 1);
     }
   });
 
-  canvasTexture(scene, 'env-trees', 256, 80, (ctx) => {
-    const dead = darkness > 0.6;
-    const pine = darkness > 0.3;
-    const xs = [10, 52, 90, 140, 176, 222];
-    xs.forEach((x0, i) => {
-      const hgt = 44 + ((i * 17) % 24);
-      const base = 80;
-      ctx.fillStyle = hex(p.trunk);
-      ctx.fillRect(x0 - 2, base - hgt * 0.45, 4, hgt * 0.45);
-      ctx.fillStyle = hex(i % 2 ? p.treeNear : p.treeFar);
-      if (dead) {
-        ctx.fillStyle = hex(p.trunk);
-        ctx.fillRect(x0 - 1, base - hgt, 2, hgt);
-        ctx.fillRect(x0 - 8, base - hgt * 0.75, 8, 2);
-        ctx.fillRect(x0, base - hgt * 0.6, 9, 2);
-        ctx.fillRect(x0 - 6, base - hgt * 0.9, 2, 6);
-      } else if (pine) {
-        for (let k = 0; k < hgt * 0.8; k += 2) {
-          const w = Math.round((k / (hgt * 0.8)) * 14) * 2;
-          ctx.fillRect(x0 - w / 2, base - hgt + k, w || 2, 2);
-        }
-      } else {
-        const r = 12 + (i % 3) * 2;
-        for (let y = -r; y <= r; y += 2) for (let x = -r; x <= r; x += 2) {
-          if (x * x + y * y <= r * r) ctx.fillRect(x0 + x, base - hgt * 0.45 - r + y, 2, 2);
-        }
-      }
-    });
+  // Слот заклинания: резное каменное гнездо
+  canvasTexture(scene, 'slot', 36, 36, (p) => {
+    p.rect(1, 0, 34, 36, 0x140c12); p.rect(0, 1, 36, 34, 0x140c12);
+    p.rect(1, 1, 34, 34, 0x5a4a44);
+    p.rect(1, 1, 34, 1, 0x8a7a6a); p.rect(1, 1, 1, 34, 0x7a6a5a);
+    p.rect(3, 3, 30, 30, 0x241a20);
+    p.ditherV(4, 4, 28, 28, 0x2e2228, 0x1a1218);
+    for (const [x, y] of [[3, 3], [32, 3], [3, 32], [32, 32]]) p.px(x, y, 0xc9a227);
   });
 
-  canvasTexture(scene, 'env-ground', 64, 48, (ctx) => {
-    ctx.fillStyle = hex(p.ground);
-    ctx.fillRect(0, 0, 64, 48);
-    ctx.fillStyle = hex(p.grass);
-    ctx.fillRect(0, 0, 64, 8);
-    for (let x = 0; x < 64; x += 4) ctx.fillRect(x, 8, 2, (x * 7) % 3 === 0 ? 4 : 2);
-    ctx.fillStyle = hex(p.path);
-    ctx.fillRect(0, 16, 64, 18);
-    ctx.fillStyle = hex(p.pathStone);
-    [[6, 20], [22, 26], [40, 18], [54, 28], [30, 30]].forEach(([x, y]) => ctx.fillRect(x, y, 4, 2));
+  canvasTexture(scene, 'px', 2, 2, (p) => p.rect(0, 0, 2, 2, 0xffffff));
+
+  // Мягкое пиксельное свечение (ступенчатые кольца) — для фонарей, костра, огней
+  canvasTexture(scene, 'glow', 48, 48, (p) => {
+    for (let y = 0; y < 48; y++) for (let x = 0; x < 48; x++) {
+      const r = Math.hypot(x - 23.5, y - 23.5) / 24;
+      if (r > 1) continue;
+      const lv = Math.ceil((1 - r) * 5) / 5;
+      p.px(x, y, 0xffffff, lv * lv * 0.55);
+    }
   });
+
+  // Виньетка (ступенчатая, с дизерингом)
+  canvasTexture(scene, 'vignette', 640, 400, (p) => {
+    for (let y = 0; y < 400; y++) for (let x = 0; x < 640; x++) {
+      const nx = (x - 320) / 360, ny = (y - 200) / 250;
+      const r = Math.sqrt(nx * nx + ny * ny);
+      const a = Math.max(0, (r - 0.62) / 0.5);
+      if (a <= 0) continue;
+      const q = Math.min(1, Math.floor(a * 6 + Pix.bayer(x, y)) / 6);
+      if (q > 0) p.px(x, y, 0x06030a, q * 0.85);
+    }
+  });
+}
+
+/** Лицевая сторона руны: металлическая рамка цвета стихии, золотые уголки, пергамент, гнездо руны, лента имени. */
+function cardFace(scene: Phaser.Scene, key: string, elColor: number): void {
+  canvasTexture(scene, key, CARD_W, CARD_H, (p) => {
+    const W = CARD_W, H = CARD_H;
+    const metal = lerpColor(elColor, 0x2a1a14, 0.5);
+    // контур со скруглёнными углами
+    p.rect(2, 0, W - 4, H, CARD_COLORS.border); p.rect(0, 2, W, H - 4, CARD_COLORS.border); p.rect(1, 1, W - 2, H - 2, CARD_COLORS.border);
+    // металлическая рамка
+    p.rect(2, 2, W - 4, H - 4, metal);
+    p.rect(2, 2, W - 4, 1, shade(metal, 0.35)); p.rect(2, 2, 1, H - 4, shade(metal, 0.2));
+    p.rect(2, H - 3, W - 4, 1, shade(metal, -0.35)); p.rect(W - 3, 2, 1, H - 4, shade(metal, -0.25));
+    // пергамент
+    p.rect(4, 4, W - 8, H - 8, CARD_COLORS.border);
+    p.ditherV(5, 5, W - 10, H - 10, CARD_COLORS.parchment, CARD_COLORS.parchmentShade);
+    for (let i = 0; i < 70; i++) {
+      const x = 5 + ((i * 37) % (W - 10)), y = 5 + ((i * 53 + i * i) % (H - 10));
+      p.px(x, y, shade(CARD_COLORS.parchmentShade, -0.08), 0.7);
+    }
+    // гнездо руны со свечением стихии
+    const cx = 26, cy = 33;
+    for (let y = -16; y <= 16; y++) for (let x = -16; x <= 16; x++) {
+      const r = Math.hypot(x, y);
+      if (r < 15 && Pix.bayer(cx + x, cy + y) < (1 - r / 15) * 0.7) p.px(cx + x, cy + y, elColor, 0.35);
+    }
+    for (let a = 0; a < 360; a += 3) {
+      const rad = (a * Math.PI) / 180;
+      p.px(cx + Math.cos(rad) * 13, cy + Math.sin(rad) * 13, shade(metal, -0.1));
+      if (a % 45 === 0) p.px(cx + Math.cos(rad) * 15, cy + Math.sin(rad) * 15, CARD_COLORS.gold);
+    }
+    // золотые уголки
+    for (const [x, y, sx, sy] of [[5, 5, 1, 1], [W - 6, 5, -1, 1], [5, H - 6, 1, -1], [W - 6, H - 6, -1, -1]]) {
+      for (let k = 0; k < 5; k++) { p.px(x + k * sx, y, CARD_COLORS.gold); p.px(x, y + k * sy, CARD_COLORS.gold); }
+      p.px(x + sx, y + sy, CARD_COLORS.goldDark);
+    }
+    // значок Силы (тёмный кругляш под цифру)
+    p.circle(11, 11, 7, CARD_COLORS.border);
+    p.circle(11, 11, 6, shade(metal, -0.25));
+    p.circle(10, 10, 3, shade(metal, -0.1));
+    // лента имени
+    const rib = shade(metal, -0.15);
+    p.rect(6, H - 15, W - 12, 9, CARD_COLORS.border);
+    p.rect(7, H - 14, W - 14, 7, rib);
+    p.rect(7, H - 14, W - 14, 1, shade(rib, 0.25));
+    p.px(6, H - 11, 0, 0); p.px(4, H - 12, rib); p.px(W - 5, H - 12, rib);
+  });
+}
+
+function cardBack(scene: Phaser.Scene): void {
+  canvasTexture(scene, 'card-back', CARD_W, CARD_H, (p) => {
+    const W = CARD_W, H = CARD_H;
+    p.rect(2, 0, W - 4, H, CARD_COLORS.border); p.rect(0, 2, W, H - 4, CARD_COLORS.border);
+    p.ditherV(2, 2, W - 4, H - 4, CARD_COLORS.backPattern, CARD_COLORS.back);
+    for (let y = 6; y < H - 6; y += 4) for (let x = 6 + ((y / 4) % 2) * 2; x < W - 6; x += 4) p.px(x, y, shade(CARD_COLORS.back, -0.3));
+    p.rect(4, 4, W - 8, 1, CARD_COLORS.gold); p.rect(4, H - 5, W - 8, 1, CARD_COLORS.gold);
+    p.rect(4, 4, 1, H - 8, CARD_COLORS.gold); p.rect(W - 5, 4, 1, H - 8, CARD_COLORS.gold);
+    // полумесяц и глаз — герб тропы
+    p.circle(26, 36, 10, CARD_COLORS.gold);
+    p.circle(29, 34, 9, CARD_COLORS.back);
+    p.circle(22, 38, 2, 0xffe8a0);
+  });
+}
+
+/** Рамка панели нужного размера (кэш по ключу). light: пергамент + дерево; dark: сланец + фиолетовое железо. */
+export function frameTexture(scene: Phaser.Scene, w: number, h: number, style: 'light' | 'dark'): string {
+  const key = `frame-${style}-${w}x${h}`;
+  if (scene.textures.exists(key)) return key;
+  const light = style === 'light';
+  const border = light ? 0x5a3418 : 0x3a2450;
+  const borderHi = light ? 0x9a6a3a : 0x7a4a9a;
+  const fillTop = light ? 0xf6e8c8 : 0x302438;
+  const fillBot = light ? 0xe4cc9c : 0x1e1626;
+  const corner = light ? 0xd8a830 : 0xb060ff;
+  canvasTexture(scene, key, w, h, (p) => {
+    p.rect(2, 0, w - 4, h, 0x120a0e); p.rect(0, 2, w, h - 4, 0x120a0e); p.rect(1, 1, w - 2, h - 2, 0x120a0e);
+    p.rect(2, 2, w - 4, h - 4, border);
+    p.rect(2, 2, w - 4, 1, borderHi); p.rect(2, 2, 1, h - 4, borderHi);
+    p.rect(4, 4, w - 8, h - 8, 0x120a0e);
+    p.ditherV(5, 5, w - 10, h - 10, fillTop, fillBot);
+    if (light) for (let i = 0; i < (w * h) / 60; i++) p.px(5 + ((i * 37) % (w - 10)), 5 + ((i * 53 + i * i) % (h - 10)), shade(fillBot, -0.06), 0.6);
+    for (const [x, y] of [[2, 2], [w - 6, 2], [2, h - 6], [w - 6, h - 6]]) {
+      p.rect(x, y, 4, 4, 0x120a0e); p.rect(x + 1, y + 1, 2, 2, corner); p.px(x + 1, y + 1, shade(corner, 0.5));
+    }
+  });
+  return key;
+}
+
+/** Текстура кнопки (выпуклая плашка с фаской). */
+export function buttonTexture(scene: Phaser.Scene, w: number, h: number, color: number): string {
+  const key = `btn-${color.toString(16)}-${w}x${h}`;
+  if (scene.textures.exists(key)) return key;
+  canvasTexture(scene, key, w, h + 3, (p) => {
+    p.rect(2, 3, w - 4, h, 0x000000, 0.45); p.rect(0, 5, w, h - 4, 0x000000, 0.45);
+    p.rect(2, 0, w - 4, h, 0x120a0e); p.rect(0, 2, w, h - 4, 0x120a0e); p.rect(1, 1, w - 2, h - 2, 0x120a0e);
+    p.ditherV(2, 2, w - 4, h - 4, shade(color, 0.18), shade(color, -0.18));
+    p.rect(2, 2, w - 4, 1, shade(color, 0.45));
+    p.rect(2, h - 3, w - 4, 1, shade(color, -0.4));
+    p.px(3, 3, shade(color, 0.6)); p.px(w - 4, 3, shade(color, 0.3));
+  });
+  return key;
 }

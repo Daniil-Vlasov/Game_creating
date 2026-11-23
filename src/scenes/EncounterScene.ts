@@ -7,11 +7,13 @@ import { openDeckPicker } from '../ui/deckPicker';
 import { backdrop } from '../ui/views';
 import { W, button, fadeTo, panel, topBar, txt } from '../ui/widgets';
 import { uiPalette } from '../visual/palette';
+import { ambientTint, type Scenery } from '../visual/scenery';
 
 /** Точки интереса без боя: случайные события (таверна, алтарь…) и костёр. */
 export class EncounterScene extends Phaser.Scene {
   private layer!: Phaser.GameObjects.Container;
   private refreshBar!: () => void;
+  private scenery!: Scenery;
 
   constructor() {
     super('Encounter');
@@ -20,17 +22,24 @@ export class EncounterScene extends Phaser.Scene {
   create(): void {
     this.cameras.main.fadeIn(300);
     const d = game.darkness;
-    backdrop(this, d, 300);
+    this.scenery = backdrop(this, d, 300, { seed: 3 + game.node * 5 });
     const node = game.current;
-    const sprite = node.type === 'campfire' ? 'poi-fire' : 'poi-sign';
-    const poi = this.add.image(W / 2 + 200, 364, sprite).setOrigin(0.5, 1).setScale(4);
-    if (node.type === 'campfire') this.tweens.add({ targets: poi, scaleY: 4.3, duration: 300, yoyo: true, repeat: -1 });
-    this.add.image(W / 2 - 220, 364, 'hero-0').setOrigin(0.5, 1).setScale(3);
+    const sprite = node.type === 'campfire' ? 'poi-fire' : node.id === 'tavern' ? 'poi-tavern' : 'poi-sign';
+    const scale = sprite === 'poi-tavern' ? 4 : 3;
+    const glow = this.add.image(W / 2 + 205, 320, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0xffb050).setScale(3.2).setAlpha(0.45);
+    this.tweens.add({ targets: glow, scale: 3.5, alpha: 0.35, duration: 180, yoyo: true, repeat: -1, repeatDelay: 80 });
+    const poi = this.add.image(W / 2 + 205, 352, sprite).setOrigin(0.5, 1).setScale(scale).setTint(ambientTint(d * 0.5));
+    if (node.type === 'campfire') this.tweens.add({ targets: poi, scaleY: scale * 1.06, duration: 300, yoyo: true, repeat: -1 });
+    this.add.image(W / 2 - 230, 352, 'hero-0').setOrigin(0.5, 1).setScale(2).setTint(ambientTint(d));
     this.refreshBar = topBar(this, node.type === 'campfire' ? STR.campfireTitle : eventById((node as { id: string }).id).title);
     this.layer = this.add.container(0, 0);
 
     if (node.type === 'campfire') this.showCampfire();
     else if (node.type === 'event') this.showEvent(node.id);
+  }
+
+  update(time: number): void {
+    this.scenery.update(0, time);
   }
 
   private frame(title: string, text: string): number {

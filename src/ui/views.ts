@@ -1,8 +1,10 @@
 import Phaser from 'phaser';
-import { RARITIES, RUNES, elementById } from '../core/data';
+import { RARITIES, RUNES } from '../core/data';
 import type { Card, SpellDef } from '../core/types';
-import { envPalette } from '../visual/palette';
-import { CARD_H, CARD_W, ELEMENT_ICON, generateEnvTextures } from '../visual/textures';
+import { canvasTexture, Pix } from '../visual/pixelArt';
+import { envPalette, shade } from '../visual/palette';
+import { addVignette, buildScenery, type Scenery } from '../visual/scenery';
+import { CARD_H, CARD_W, ELEMENT_ICON } from '../visual/textures';
 import { W, txt } from './widgets';
 
 export interface CardView extends Phaser.GameObjects.Container {
@@ -11,18 +13,16 @@ export interface CardView extends Phaser.GameObjects.Container {
   powerText: Phaser.GameObjects.Text;
 }
 
-/** Визуал руны-карты: Сила в углу (цвет стихии), крупная иконка стихии, имя руны. */
+/** Руна-карта: рамка цвета стихии, Сила в значке, иконка стихии в гнезде, имя на ленте. */
 export function cardView(scene: Phaser.Scene, x: number, y: number, card: Card): CardView {
-  const el = elementById(card.element);
   const c = scene.add.container(x, y) as CardView;
   const glow = scene.add.image(0, 0, 'card-glow').setVisible(false);
-  const bg = scene.add.image(0, 0, 'card');
-  const band = scene.add.rectangle(0, -CARD_H / 2 + 5, CARD_W - 6, 3, Phaser.Display.Color.HexStringToColor(el.color).color);
-  const icon = scene.add.image(0, 2, `icon-${ELEMENT_ICON[card.element]}`).setScale(3);
-  const powerText = txt(scene, -CARD_W / 2 + 5, -CARD_H / 2 + 8, String(card.power), 13, el.color, [0, 0]).setStroke('#2a1a10', 3);
+  const bg = scene.add.image(0, 0, `card-${card.element}`);
+  const icon = scene.add.image(0, -3, `icon-${ELEMENT_ICON[card.element]}`).setScale(2);
+  const powerText = txt(scene, -CARD_W / 2 + 11, -CARD_H / 2 + 11, String(card.power), card.power >= 10 ? 9 : 11, '#fff4d0').setStroke('#1a1010', 2);
   const runeName = RUNES.find((r) => r.power === card.power)?.name ?? 'Руна+';
-  const name = txt(scene, 0, CARD_H / 2 - 10, runeName, 8, '#5a3a20');
-  c.add([glow, bg, band, icon, powerText, name]);
+  const name = txt(scene, 0, CARD_H / 2 - 10.5, runeName, 7, '#f6eadc');
+  c.add([glow, bg, icon, powerText, name]);
   c.card = card;
   c.glow = glow;
   c.powerText = powerText;
@@ -34,79 +34,72 @@ export interface SpellView extends Phaser.GameObjects.Container {
   spell: SpellDef | null;
 }
 
-/** Слот заклинания 36x36 с рамкой цвета редкости. */
+/** Слот заклинания 36x36: каменное гнездо, рамка цвета редкости, иконка, череп у проклятых. */
 export function spellView(scene: Phaser.Scene, x: number, y: number, spell: SpellDef | null): SpellView {
   const c = scene.add.container(x, y) as SpellView;
-  const slot = scene.add.image(0, 0, 'slot');
-  c.add(slot);
+  c.add(scene.add.image(0, 0, 'slot'));
   if (spell) {
     const color = Phaser.Display.Color.HexStringToColor(RARITIES[spell.rarity].color).color;
-    c.add(scene.add.rectangle(0, 0, 34, 34).setStrokeStyle(2, color));
+    c.add(scene.add.image(0, 0, 'glow').setTint(color).setBlendMode(Phaser.BlendModes.ADD).setScale(0.6).setAlpha(0.7));
+    c.add(scene.add.rectangle(0, 0, 32, 32).setStrokeStyle(1, color));
     c.add(scene.add.image(0, 0, `icon-${spell.icon}`).setScale(3));
-    if (spell.penalty) c.add(scene.add.image(12, -12, 'icon-skull').setScale(1));
+    if (spell.penalty) c.add(scene.add.image(12, -12, 'icon-skull'));
   }
   c.spell = spell;
   c.setSize(36, 36);
   return c;
 }
 
-/**
- * Фон: градиентное небо (пиксельные полосы), солнце/луна, звёзды во тьме,
- * горы и деревья (tileSprite для параллакса), земля с тропой.
- */
+/** Фон сцены «уют с тенью» (вид сбоку): параллакс-слои + виньетка. */
 export function backdrop(
   scene: Phaser.Scene,
   darkness: number,
   groundY: number,
-  opts: { fixed?: boolean; height?: number } = {},
-): { mountains: Phaser.GameObjects.TileSprite; trees: Phaser.GameObjects.TileSprite; ground: Phaser.GameObjects.TileSprite } {
-  generateEnvTextures(scene, darkness);
-  const p = envPalette(darkness);
-  const g = scene.add.graphics().setScrollFactor(0);
-  const bands = 12;
-  for (let i = 0; i < bands; i++) {
-    const t = i / (bands - 1);
-    g.fillStyle(colorInterp(p.skyTop, p.skyBottom, t), 1);
-    g.fillRect(0, (groundY * i) / bands, W, groundY / bands + 1);
-  }
-  // Звёзды во тьме
-  if (darkness > 0.35) {
-    g.fillStyle(0xffffff, Math.min(1, (darkness - 0.35) * 2));
-    for (let i = 0; i < 40; i++) g.fillRect((i * 97) % W, (i * 53) % Math.floor(groundY * 0.5), 1, 1);
-  }
-  // Солнце → луна
-  g.fillStyle(p.sun, 1);
-  const sx = 520 - darkness * 380;
-  const sy = 50 + darkness * 10;
-  g.fillRect(sx - 10, sy - 14, 20, 28);
-  g.fillRect(sx - 14, sy - 10, 28, 20);
-  if (darkness > 0.5) {
-    g.fillStyle(p.skyTop, 1);
-    g.fillRect(sx - 4, sy - 12, 16, 22);
-  }
-  const mountains = scene.add.tileSprite(0, groundY - 20, W, 90, 'env-mountains').setOrigin(0, 1).setScrollFactor(0).setScale(1);
-  const trees = scene.add.tileSprite(0, groundY + 6, W, 80, 'env-trees').setOrigin(0, 1).setScrollFactor(0);
-  const ground = scene.add.tileSprite(0, groundY, W / 2, (opts.height ?? 48), 'env-ground').setOrigin(0, 0).setScale(2).setScrollFactor(0);
-  if (opts.fixed) {
-    mountains.tilePositionX = 40;
-  }
-  return { mountains, trees, ground };
+  opts: { bottom?: number; foreground?: boolean; seed?: number; vignette?: boolean } = {},
+): Scenery {
+  const s = buildScenery(scene, { darkness, groundY, bottom: opts.bottom, foreground: opts.foreground, seed: opts.seed });
+  if (opts.vignette !== false) addVignette(scene, darkness);
+  return s;
 }
 
-function colorInterp(a: number, b: number, t: number): number {
-  const ca = Phaser.Display.Color.IntegerToColor(a);
-  const cb = Phaser.Display.Color.IntegerToColor(b);
-  const r = Phaser.Display.Color.Interpolate.ColorWithColor(ca, cb, 100, Math.round(t * 100));
-  return Phaser.Display.Color.GetColor(r.r, r.g, r.b);
-}
-
-/** Карточный стол: деревянная рама и сукно. */
+/** Карточный стол: доски с текстурой дерева, латунные гвозди, сукно с затенением, свеча. */
 export function cardTable(scene: Phaser.Scene, darkness: number, top: number, bottom = 400): void {
   const p = envPalette(darkness);
-  const g = scene.add.graphics();
-  g.fillStyle(p.woodDark, 1).fillRect(0, top, W, bottom - top);
-  g.fillStyle(p.wood, 1).fillRect(0, top + 2, W, 6);
-  g.fillStyle(p.felt, 1).fillRect(6, top + 10, W - 12, bottom - top - 14);
-  g.fillStyle(p.feltDark, 1);
-  for (let y = top + 12; y < bottom - 6; y += 6) for (let x = 8 + ((y / 6) % 2) * 3; x < W - 8; x += 6) g.fillRect(x, y, 1, 1);
+  const key = `table-${Math.round(darkness * 20)}-${top}-${bottom}`;
+  const h = bottom - top;
+  if (!scene.textures.exists(key)) {
+    canvasTexture(scene, key, W, h, (px) => {
+      // доски
+      for (let y = 0; y < h; y++) for (let x = 0; x < W; x++) {
+        const plank = Math.floor(x / 80);
+        const grain = Math.sin(x * 0.05 + y * 0.9 + plank * 3) + Math.sin(y * 0.31 + plank);
+        let c = grain > 1.2 ? p.woodLight : grain < -1.1 ? p.woodDark : p.wood;
+        if (x % 80 === 0) c = shade(p.woodDark, -0.3);
+        px.px(x, y, c);
+      }
+      px.rect(0, 0, W, 2, shade(p.woodLight, 0.15));
+      px.rect(0, 2, W, 1, p.woodDark);
+      // сукно
+      const fx = 8, fy = 10, fw = W - 16, fh = h - 16;
+      px.rect(fx - 2, fy - 2, fw + 4, fh + 4, shade(p.woodDark, -0.4));
+      for (let y = 0; y < fh; y++) for (let x = 0; x < fw; x++) {
+        const nx = (x - fw / 2) / (fw / 2), ny = (y - fh / 2) / (fh / 2);
+        const r = Math.min(1, Math.sqrt(nx * nx * 0.6 + ny * ny));
+        let c = Pix.bayer(x, y) < r * 0.8 ? p.feltDark : p.felt;
+        if ((x + y * 3) % 7 === 0) c = shade(c, -0.06);
+        px.px(fx + x, fy + y, c);
+      }
+      // латунные гвозди
+      for (let x = 20; x < W; x += 80) for (const y of [5, h - 4]) { px.px(x, y, 0xe0b040); px.px(x + 1, y, 0x8a6418); }
+    });
+  }
+  scene.add.image(0, top, key).setOrigin(0);
+  // Свеча — тёплый огонёк на столе
+  const cx = W - 22, cy = top + 30;
+  scene.add.rectangle(cx, cy + 8, 6, 14, 0xe8dcc0).setStrokeStyle(1, 0x2a1a14);
+  scene.add.rectangle(cx, cy + 16, 12, 3, 0x8a6418);
+  const flame = scene.add.image(cx, cy - 1, 'icon-flame').setScale(0.8);
+  const glow = scene.add.image(cx, cy, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0xffb050).setScale(2.2).setAlpha(0.5);
+  scene.tweens.add({ targets: [glow], scale: 2.5, alpha: 0.38, duration: 140, yoyo: true, repeat: -1, repeatDelay: 60, ease: 'Sine.easeInOut' });
+  scene.tweens.add({ targets: flame, scaleY: 0.95, scaleX: 0.75, duration: 110, yoyo: true, repeat: -1 });
 }

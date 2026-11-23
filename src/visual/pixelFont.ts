@@ -21,12 +21,12 @@ const GLYPHS: Record<string, string[]> = {
 export function pixelText(scene: Phaser.Scene, key: string, text: string, color = '#ffffff', shadow = '#000000'): void {
   const chars = text.toLowerCase().split('');
   const w = chars.length * 4 + 1;
-  canvasTexture(scene, key, w, 7, (ctx) => {
+  canvasTexture(scene, key, w, 7, (p) => {
     const draw = (dx: number, dy: number, fill: string) => {
-      ctx.fillStyle = fill;
+      const c = parseInt(fill.slice(1), 16);
       chars.forEach((ch, i) => {
         const g = GLYPHS[ch] ?? GLYPHS[' '];
-        g.forEach((row, y) => { for (let x = 0; x < 3; x++) if (row[x] === '1') ctx.fillRect(i * 4 + x + dx, y + dy, 1, 1); });
+        g.forEach((row, y) => { for (let x = 0; x < 3; x++) if (row[x] === '1') p.px(i * 4 + x + dx, y + dy, c); });
       });
     };
     draw(1, 1, shadow);

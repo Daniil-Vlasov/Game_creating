@@ -13,14 +13,15 @@ export class TitleScene extends Phaser.Scene {
 
   create(): void {
     this.cameras.main.fadeIn(300);
-    const { mountains, trees } = backdrop(this, 0, 300);
-    const scroll = (_t: number, dt: number) => {
-      mountains.tilePositionX += dt * 0.004;
-      trees.tilePositionX += dt * 0.012;
+    const sc = backdrop(this, 0, 300, { foreground: true });
+    let sx = 0;
+    const scroll = (t: number, dt: number) => {
+      sx += dt * 0.02;
+      sc.update(sx, t);
     };
     this.events.on('update', scroll);
     this.events.once('shutdown', () => this.events.off('update', scroll));
-    this.add.image(W / 2 - 120, 330, 'hero-0').setScale(3);
+    this.add.image(W / 2 - 120, 352, 'hero-0').setOrigin(0.5, 1).setScale(2);
     txt(this, W / 2, 110, STR.title, 40, '#fff4d0').setStroke('#3a2414', 6);
     txt(this, W / 2, 148, STR.subtitle, 14, '#3a2414');
     const tap = txt(this, W / 2, 220, STR.tapToStart, 14, '#fff4d0').setStroke('#3a2414', 4);
