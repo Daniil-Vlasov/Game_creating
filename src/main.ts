@@ -6,6 +6,7 @@ import { BattleScene } from './scenes/BattleScene';
 import { ShopScene } from './scenes/ShopScene';
 import { EncounterScene } from './scenes/EncounterScene';
 import { H, W } from './ui/widgets';
+import './pwa';
 
 new Phaser.Game({
   type: Phaser.AUTO,
