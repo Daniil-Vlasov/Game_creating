@@ -55,7 +55,13 @@ class SoundEngineImpl {
     const ctx = this.ctx!;
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 0.8;
+    // Общий компрессор-«лимитер» на мастере: держит пики финального удара без перегруза
     const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -12;
+    comp.knee.value = 8;
+    comp.ratio.value = 8;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.25;
     this.master.connect(comp).connect(ctx.destination);
 
     this.sfxBus = ctx.createGain();
@@ -144,7 +150,8 @@ class SoundEngineImpl {
     f.type = type;
     f.frequency.value = filterFreq;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(vol, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(vol, 0.0002), t + 0.003);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     src.connect(f).connect(g).connect(this.sfxBus);
     src.start(t);
@@ -173,6 +180,73 @@ class SoundEngineImpl {
       o.stop(t + dur + 0.05);
     }
     f.connect(g).connect(this.luteBus);
+  }
+
+  /**
+   * Универсальный голос SFX: осциллятор → (фильтр) → огибающая.
+   * Атака/спад — exponentialRamp от 0.0001 (без щелчков); осциллятор всегда останавливается.
+   */
+  private voice(
+    freq: number, dur: number, type: OscillatorType, vol: number,
+    opts: { when?: number; slideTo?: number; attack?: number; filter?: number; filterType?: BiquadFilterType; detune?: number } = {},
+  ): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime + (opts.when ?? 0);
+    const atk = Math.min(opts.attack ?? 0.005, dur * 0.5);
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (opts.slideTo) o.frequency.exponentialRampToValueAtTime(opts.slideTo, t + dur);
+    if (opts.detune) o.detune.value = opts.detune;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(vol, 0.0002), t + atk);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    let head: AudioNode = o;
+    if (opts.filter) {
+      const f = ctx.createBiquadFilter();
+      f.type = opts.filterType ?? 'lowpass';
+      f.frequency.value = opts.filter;
+      head = o.connect(f);
+    }
+    head.connect(g).connect(this.sfxBus);
+    o.start(t);
+    o.stop(t + dur + 0.03);
+  }
+
+  /** Шумовой «свуш» с движущимся фильтром (райзеры, взмахи). */
+  private sweep(dur: number, vol: number, fromHz: number, toHz: number, when = 0, type: BiquadFilterType = 'bandpass', attack = 0.01): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime + when;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.Q.value = 2;
+    f.frequency.setValueAtTime(fromHz, t);
+    f.frequency.exponentialRampToValueAtTime(toHz, t + dur);
+    const g = ctx.createGain();
+    const atk = Math.min(attack, dur * 0.8);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(vol, 0.0002), t + atk);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(this.sfxBus);
+    src.start(t);
+    src.stop(t + dur + 0.03);
+  }
+
+  /** Кратковременно приглушает музыку под мощный SFX и плавно возвращает. */
+  private duck(amount: number, hold: number): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const p = this.musicBus.gain;
+    p.cancelScheduledValues(t);
+    p.setTargetAtTime(0.32 * (1 - amount), t, 0.02);
+    p.setTargetAtTime(0.32, t + hold, 0.35);
   }
 
   private bell(freq: number, t: number, vol: number): void {
@@ -247,6 +321,151 @@ class SoundEngineImpl {
 
   defeat(): void {
     [60, 58, 55, 51].forEach((m, i) => this.tone(NOTE(m), 0.45, 'triangle', 0.14, i * 0.25));
+  }
+
+  // ---------------- Подсчёт: райзер и финальный удар ----------------
+
+  /**
+   * Тик нарастания во время подсчёта. step — номер шага (0..total-1), total — число шагов.
+   * Питч идёт вверх по пентатонике, громкость и «яркость» растут с прогрессом.
+   */
+  scoreRiser(step: number, total: number): void {
+    if (!this.ctx) return;
+    const n = Math.max(1, total - 1);
+    const p = Math.min(1, Math.max(0, step / n));
+    const semis = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26, 28, 31, 33, 36];
+    const idx = Math.min(Math.max(0, Math.floor(step)), semis.length - 1);
+    const f = NOTE(67 + semis[idx]);
+    const vol = 0.06 + 0.07 * p;
+    this.voice(f, 0.08 + 0.04 * p, 'square', vol, { filter: 1800 + 5000 * p });
+    this.voice(f * 2, 0.06, 'triangle', vol * 0.5, { when: 0.015 });
+    // Под-октава «подпирает» тик по мере нарастания
+    if (p > 0.3) this.voice(f / 2, 0.12, 'triangle', 0.05 * p, { filter: 900 });
+    // Шумовой подъём между тиками
+    this.sweep(0.14, 0.03 + 0.05 * p, 800 + 2000 * p, 2500 + 6000 * p, 0, 'bandpass', 0.1);
+  }
+
+  /**
+   * Финальный удар после подсчёта. Вес растёт с итогом:
+   * ≈50 — лёгкий хлопок, 300+ — мощный бас, 1000+ — эпичный раскат с хором колоколов.
+   * Громкость ограничена (кривая log + компрессор мастера + приглушение музыки).
+   */
+  scoreImpact(total: number): void {
+    if (!this.ctx) return;
+    const tot = Math.max(1, total);
+    const w = Math.min(1, Math.max(0, (Math.log10(tot) - 1) / 2)); // 10→0, 50→0.35, 300→0.74, 1000→1
+    const epic = tot >= 1000;
+
+    // Бас-«кик»: синус со спадом питча; длина и громкость растут с весом
+    this.voice(110 + 40 * w, 0.22 + 0.5 * w, 'sine', 0.22 + 0.3 * w, { slideTo: 38, attack: 0.004 });
+    // 2-я гармоника — чтобы бас был слышен на динамиках планшета
+    this.voice(220 + 60 * w, 0.15 + 0.25 * w, 'square', 0.05 + 0.07 * w, { slideTo: 80, filter: 600 + 600 * w, attack: 0.004 });
+    // Шумовой «хлопок»/крэш: темнее и короче на малых итогах
+    this.noise(0.12 + 0.45 * w, 0.18 + 0.22 * w, 1200 + 3500 * w, 0, 'lowpass');
+    // Аккордовый стаб: квинта, на весе > 0.5 — ещё октава
+    const root = NOTE(48 + Math.round(w * 5));
+    this.voice(root, 0.25 + 0.4 * w, 'sawtooth', 0.05 + 0.04 * w, { filter: 700 + 2500 * w, attack: 0.006 });
+    this.voice(root * 1.5, 0.25 + 0.4 * w, 'square', 0.035 + 0.03 * w, { filter: 900 + 2500 * w, attack: 0.006 });
+    if (w > 0.5) this.voice(root * 2, 0.5 + 0.4 * w, 'triangle', 0.06, { attack: 0.01 });
+
+    if (w > 0.6) {
+      // Мощный: хвост-рокот
+      this.sweep(0.6 + 0.6 * w, 0.08 * w, 600, 120, 0.03, 'lowpass', 0.02);
+    }
+    if (epic) {
+      // Эпичный: восходящий мажорный пробег + блеск
+      [0, 4, 7, 12, 16].forEach((s, i) =>
+        this.voice(NOTE(72 + s), 0.35, 'square', 0.05, { when: 0.08 + i * 0.05, filter: 4000 }));
+      this.voice(NOTE(96), 1.2, 'triangle', 0.05, { when: 0.35, attack: 0.02 });
+      this.sweep(0.9, 0.05, 3000, 9000, 0.1, 'highpass', 0.05);
+    }
+    this.duck(0.3 + 0.4 * w, 0.15 + 0.5 * w);
+  }
+
+  // ---------------- Враги ----------------
+
+  /** Короткий звук намерения врага (при объявлении или исполнении). */
+  enemyIntent(kind: 'attack' | 'heavy' | 'block' | 'curse' | 'buff' | 'heal' | 'steal' | 'multi'): void {
+    if (!this.ctx) return;
+    switch (kind) {
+      case 'attack':
+        // Рык-взмах: пила вниз + свуш
+        this.voice(320, 0.16, 'sawtooth', 0.09, { slideTo: 150, filter: 1400 });
+        this.sweep(0.14, 0.12, 3000, 900);
+        break;
+      case 'heavy':
+        // Телеграф тяжёлого удара: низкая малая секунда, медленная атака, глухой удар
+        this.voice(NOTE(40), 0.5, 'square', 0.08, { filter: 500, attack: 0.12 });
+        this.voice(NOTE(41), 0.5, 'square', 0.06, { filter: 500, attack: 0.12, detune: -8 });
+        this.voice(90, 0.3, 'sine', 0.22, { when: 0.32, slideTo: 40 });
+        this.noise(0.2, 0.15, 400, 0.32, 'lowpass');
+        break;
+      case 'block':
+        // Лязг щита врага: металл, ниже и «тупее» блока игрока
+        this.voice(300, 0.12, 'square', 0.09, { filter: 2000 });
+        this.voice(452, 0.25, 'triangle', 0.08, { when: 0.02 });
+        this.voice(1130, 0.18, 'sine', 0.03, { when: 0.02 });
+        this.noise(0.08, 0.15, 3000, 0, 'highpass');
+        break;
+      case 'curse':
+        // Шёпот проклятия: тритон из расстроенных синусов, плывущий вниз
+        this.voice(NOTE(62), 0.55, 'sine', 0.07, { slideTo: NOTE(60), attack: 0.15, detune: 12 });
+        this.voice(NOTE(68), 0.55, 'sine', 0.06, { slideTo: NOTE(66), attack: 0.15, detune: -12 });
+        this.sweep(0.5, 0.05, 1500, 500, 0, 'bandpass', 0.2);
+        break;
+      case 'buff':
+        // Усиление: восходящая кварта, квадраты
+        this.voice(NOTE(55), 0.12, 'square', 0.08, { filter: 2000 });
+        this.voice(NOTE(60), 0.22, 'square', 0.08, { when: 0.09, filter: 2400 });
+        this.voice(NOTE(60), 0.3, 'sawtooth', 0.04, { when: 0.09, slideTo: NOTE(67), filter: 1500 });
+        break;
+      case 'heal':
+        // Лечение: мягкое треугольное арпеджио вверх
+        [0, 4, 7, 12].forEach((s, i) => this.voice(NOTE(69 + s), 0.25, 'triangle', 0.07, { when: i * 0.05, attack: 0.01 }));
+        break;
+      case 'steal':
+        // Ловкие пальцы: быстрый «хихикающий» спуск
+        [84, 81, 79, 76].forEach((m, i) => this.voice(NOTE(m), 0.06, 'square', 0.06, { when: i * 0.04, filter: 3500 }));
+        this.sweep(0.12, 0.08, 5000, 2000, 0.05);
+        break;
+      case 'multi':
+        // Серия ударов: три быстрых взмаха
+        for (let k = 0; k < 3; k++) {
+          this.sweep(0.09, 0.1, 3500 - k * 400, 1100, k * 0.08);
+          this.voice(300 - k * 30, 0.08, 'sawtooth', 0.06, { when: k * 0.08, slideTo: 140, filter: 1300 });
+        }
+        break;
+    }
+  }
+
+  /** Пробитие Щита врага: стеклянно-металлический раскол + глухой удар. */
+  shieldBreak(): void {
+    if (!this.ctx) return;
+    this.voice(140, 0.25, 'sine', 0.22, { slideTo: 45, attack: 0.003 });
+    this.noise(0.3, 0.25, 4500, 0, 'highpass');
+    this.voice(620, 0.1, 'square', 0.08, { slideTo: 300, filter: 2500 });
+    // Осколки: россыпь высоких нисходящих тонов
+    const shards = [2637, 2093, 3136, 1760, 2794, 2349];
+    shards.forEach((f, i) =>
+      this.voice(f * (0.97 + Math.random() * 0.06), 0.07 + Math.random() * 0.05, i % 2 ? 'triangle' : 'square', 0.04,
+        { when: 0.02 + i * 0.03 + Math.random() * 0.015, slideTo: f * 0.8 }));
+    this.duck(0.25, 0.15);
+  }
+
+  /** Проклятие руны: нарастающий «обратный» вдох и расстроенный нисходящий диссонанс. */
+  curseRune(): void {
+    if (!this.ctx) return;
+    this.sweep(0.35, 0.08, 400, 2500, 0, 'bandpass', 0.3);
+    this.voice(NOTE(57), 0.7, 'sawtooth', 0.05, { when: 0.3, slideTo: NOTE(50), filter: 900, attack: 0.02, detune: 15 });
+    this.voice(NOTE(58), 0.7, 'sawtooth', 0.05, { when: 0.3, slideTo: NOTE(51), filter: 900, attack: 0.02, detune: -15 });
+    this.voice(NOTE(81), 0.5, 'sine', 0.04, { when: 0.3, slideTo: NOTE(75), attack: 0.01 });
+  }
+
+  /** Кража золота: монеты «утекают» вниз + свуш ухода. */
+  stealGold(): void {
+    if (!this.ctx) return;
+    [1976, 1568, 1318, 988].forEach((f, i) => this.voice(f, 0.09, 'square', 0.08, { when: i * 0.06, filter: 5000 }));
+    this.sweep(0.25, 0.08, 6000, 1200, 0.15);
   }
 
   // ---------------- Музыка ----------------
