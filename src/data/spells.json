@@ -1,0 +1,33 @@
+{
+  "_effects": "target: atk | def | both. addPower/addMult/mulMult — к Силе/Множителю цели; elementPower/elementMult — за каждую сыгранную руну стихии element; comboMult — если комбинация в combos; handLeftMult — +value Множ. за каждую руну, оставшуюся в руке; lowCardMult — если сыграно ≤ maxCards рун; goldOnWin/healOnWin — после победы. penalty (только Проклятые): hpLossPerPlay — теряешь HP за каждый розыгрыш; handSizeMinus — меньше карт в руке; goldLossOnWin.",
+  "rarities": {
+    "common":    { "name": "Обычное",     "color": "#a8b0b8", "weight": 55 },
+    "uncommon":  { "name": "Необычное",   "color": "#4caf6a", "weight": 27 },
+    "rare":      { "name": "Редкое",      "color": "#4a8ae0", "weight": 11 },
+    "legendary": { "name": "Легендарное", "color": "#e8a830", "weight": 3 },
+    "cursed":    { "name": "Проклятое",   "color": "#b03ad0", "weight": 4 }
+  },
+  "shop": {
+    "offers": 3,
+    "rerollBase": 2,
+    "rerollStep": 1,
+    "upgradeCost": 3,
+    "upgradeAmount": 2,
+    "removeCost": 3,
+    "sellRatio": 0.5
+  },
+  "spells": [
+    { "id": "sparkle",      "name": "Искра",              "rarity": "common",    "price": 4,  "icon": "spark",   "desc": "+6 Силы Атаки",                               "effect": { "type": "addPower", "target": "atk", "value": 6 } },
+    { "id": "stoneSkin",    "name": "Каменная кожа",      "rarity": "common",    "price": 4,  "icon": "rock",    "desc": "+8 Силы Щита",                                "effect": { "type": "addPower", "target": "def", "value": 8 } },
+    { "id": "pilgrimPurse", "name": "Кошель пилигрима",   "rarity": "common",    "price": 5,  "icon": "coin",    "desc": "+3 золота после победы",                      "effect": { "type": "goldOnWin", "value": 3 } },
+    { "id": "battleHymn",   "name": "Боевой гимн",        "rarity": "uncommon",  "price": 6,  "icon": "note",    "desc": "+2 Множ. Атаки",                              "effect": { "type": "addMult", "target": "atk", "value": 2 } },
+    { "id": "ember",        "name": "Тлеющий уголь",      "rarity": "uncommon",  "price": 6,  "icon": "flame",   "desc": "+1 Множ. Атаки за каждую руну Огня",          "effect": { "type": "elementMult", "element": "fire", "target": "atk", "value": 1 } },
+    { "id": "tideWard",     "name": "Приливный оберег",   "rarity": "uncommon",  "price": 6,  "icon": "drop",    "desc": "+5 Силы Щита за каждую руну Воды",            "effect": { "type": "elementPower", "element": "water", "target": "def", "value": 5 } },
+    { "id": "twinMoons",    "name": "Две луны",           "rarity": "rare",      "price": 8,  "icon": "moon",    "desc": "+4 Множ. Атаки при Резонансе или Триаде",     "effect": { "type": "comboMult", "combos": ["resonance", "triad"], "target": "atk", "value": 4 } },
+    { "id": "patientSage",  "name": "Терпеливый мудрец",  "rarity": "rare",      "price": 8,  "icon": "eye",     "desc": "+1 Множ. Атаки за каждую руну, оставшуюся в руке", "effect": { "type": "handLeftMult", "target": "atk", "value": 1 } },
+    { "id": "dragonHeart",  "name": "Сердце дракона",     "rarity": "legendary", "price": 12, "icon": "heart",   "desc": "Множ. Атаки ×2",                              "effect": { "type": "mulMult", "target": "atk", "value": 2 } },
+    { "id": "worldTree",    "name": "Мировое древо",      "rarity": "legendary", "price": 12, "icon": "tree",    "desc": "Множ. Атаки и Щита ×1.5",                     "effect": { "type": "mulMult", "target": "both", "value": 1.5 } },
+    { "id": "bloodPact",    "name": "Кровавый пакт",      "rarity": "cursed",    "price": 7,  "icon": "skull",   "desc": "Множ. Атаки ×3. Проклятие: −3 HP за розыгрыш", "effect": { "type": "mulMult", "target": "atk", "value": 3 }, "penalty": { "type": "hpLossPerPlay", "value": 3 } },
+    { "id": "hollowCrown",  "name": "Пустая корона",      "rarity": "cursed",    "price": 7,  "icon": "crown",   "desc": "+4 Множ. Атаки и Щита. Проклятие: −1 карта в руке", "effect": { "type": "addMult", "target": "both", "value": 4 }, "penalty": { "type": "handSizeMinus", "value": 1 } }
+  ]
+}

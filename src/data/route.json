@@ -1,0 +1,25 @@
+{
+  "_doc": "Линейный маршрут забега. darkness плавно растёт от 0 (лайт-фэнтези: тракты, таверны) к 1 (дарк-фэнтези). Победа над врагом ведёт в магазин.",
+  "segmentLength": 900,
+  "nodes": [
+    { "type": "event",    "id": "tavern" },
+    { "type": "enemy",    "id": "slime" },
+    { "type": "campfire" },
+    { "type": "enemy",    "id": "goblin" },
+    { "type": "event",    "id": "bard" },
+    { "type": "enemy",    "id": "wolf" },
+    { "type": "event",    "id": "altar" },
+    { "type": "campfire" },
+    { "type": "enemy",    "id": "wraith" },
+    { "type": "event",    "id": "idol" },
+    { "type": "campfire" },
+    { "type": "enemy",    "id": "lich" }
+  ],
+  "poi": {
+    "event":    { "name": "Событие",  "sprite": "poi-sign" },
+    "campfire": { "name": "Костёр",   "sprite": "poi-fire" },
+    "enemy":    { "name": "Враг",     "sprite": "poi-skull" },
+    "boss":     { "name": "Босс",     "sprite": "poi-skull" }
+  },
+  "campfire": { "healPercent": 30, "upgradeAmount": 3 }
+}

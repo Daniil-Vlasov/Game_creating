@@ -1,0 +1,10 @@
+{
+  "_note": "Атака врага объявляется заранее (намерение) и бьёт после каждого розыгрыша игрока; Щит игрока поглощает урон и сгорает в конце хода.",
+  "enemies": [
+    { "id": "slime",  "name": "Луговой слизень",     "hp": 80,  "attack": [8, 12],  "reward": 6,  "sprite": "slime",  "boss": false },
+    { "id": "goblin", "name": "Гоблин с тракта",     "hp": 150, "attack": [12, 18], "reward": 7,  "sprite": "goblin", "boss": false },
+    { "id": "wolf",   "name": "Сумрачный волк",      "hp": 250, "attack": [18, 26], "reward": 8,  "sprite": "wolf",   "boss": false },
+    { "id": "wraith", "name": "Призрак кургана",     "hp": 380, "attack": [24, 34], "reward": 10, "sprite": "wraith", "boss": false },
+    { "id": "lich",   "name": "Лич Пепельной башни", "hp": 600, "attack": [32, 48], "reward": 20, "sprite": "lich",   "boss": true }
+  ]
+}

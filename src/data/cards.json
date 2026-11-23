@@ -1,0 +1,32 @@
+{
+  "_doc": "Колода — руны четырёх стихий. Огонь и Воздух — атакующие (их Сила идёт в Атаку), Земля и Вода — защитные (их Сила идёт в Щит).",
+  "elements": [
+    { "id": "fire",  "name": "Огонь",  "affinity": "attack",  "color": "#e0603a", "icon": "flame" },
+    { "id": "air",   "name": "Воздух", "affinity": "attack",  "color": "#7ec4e0", "icon": "wind"  },
+    { "id": "earth", "name": "Земля",  "affinity": "defense", "color": "#a07a3a", "icon": "rock"  },
+    { "id": "water", "name": "Вода",   "affinity": "defense", "color": "#3a7ad0", "icon": "drop"  }
+  ],
+  "runes": [
+    { "power": 1,  "name": "Зерно" },
+    { "power": 2,  "name": "Росток" },
+    { "power": 3,  "name": "Тропа" },
+    { "power": 4,  "name": "Очаг" },
+    { "power": 5,  "name": "Страж" },
+    { "power": 6,  "name": "Клятва" },
+    { "power": 7,  "name": "Знамя" },
+    { "power": 8,  "name": "Корона" },
+    { "power": 9,  "name": "Звезда" },
+    { "power": 10, "name": "Исток" }
+  ],
+  "rules": {
+    "handSize": 8,
+    "maxPlay": 5,
+    "discardsPerBattle": 3,
+    "maxSpellSlots": 5,
+    "heroMaxHp": 80,
+    "startGold": 4,
+    "interestPer": 5,
+    "interestMax": 5,
+    "maxRunePower": 20
+  }
+}
