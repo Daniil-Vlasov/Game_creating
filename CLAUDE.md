@@ -48,3 +48,10 @@ src/
 - `visual-artist` — палитры, пиксель-арт, вёрстка 640×400, промпты для нейрогенерации ассетов.
 - `sound-composer` — Web Audio SFX и музыка.
 - `qa-reviewer` — ревью, проверка сборки, версия.
+- `producer` — анкеты мнений владельца → профиль предпочтений, бэклог, брифы агентам (`docs/feedback/`).
+
+## Цикл итерации
+1. @producer готовит анкету → основная сессия задаёт вопросы владельцу (AskUserQuestion).
+2. @producer обрабатывает ответы → `docs/feedback/BACKLOG.md` и брифы `docs/feedback/briefs/*.md`.
+3. Исполнители по брифам (обычно game-designer → coder/visual-artist/sound-composer).
+4. @qa-reviewer: сборка, ревью, bump версии → коммит → пуш в `main` (автодеплой) → плейтест на планшете.
