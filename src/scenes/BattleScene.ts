@@ -701,7 +701,7 @@ export class BattleScene extends Phaser.Scene {
     const final = game.isLastNode;
     const reward = game.applyVictory();
     this.refreshBar();
-    this.resultPanel(final ? STR.runWon : STR.victory, `+${reward.gold} золота${reward.heal ? `, +${reward.heal} HP` : ''}`, final ? STR.newRun : STR.toShop, () => {
+    this.resultPanel(final ? STR.runWon : STR.victory, fmt(STR.rewardGold, { g: reward.gold }) + (reward.heal ? fmt(STR.rewardHeal, { h: reward.heal }) : ''), final ? STR.newRun : STR.toShop, () => {
       if (final) {
         game.reset();
         fadeTo(this, 'Title');
@@ -713,7 +713,7 @@ export class BattleScene extends Phaser.Scene {
     Sound.defeat();
     Sound.stopMusic();
     this.tweens.add({ targets: this.hero, angle: -90, alpha: 0.5, duration: 600 });
-    this.resultPanel(STR.defeat, `Пройдено точек: ${game.node}`, STR.newRun, () => {
+    this.resultPanel(STR.defeat, fmt(STR.nodesPassed, { n: game.node }), STR.newRun, () => {
       game.reset();
       fadeTo(this, 'Title');
     });

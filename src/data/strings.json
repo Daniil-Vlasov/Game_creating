@@ -92,5 +92,13 @@
   "shieldBroken": "Щит пробит!",
   "forkTitle": "Развилка",
   "forkHint": "Выбери, куда идти дальше",
-  "routeDepth": "Шаг {n}/{t}"
+  "routeDepth": "Шаг {n}/{t}",
+  "rewardGold": "+{g} золота",
+  "rewardHeal": ", +{h} HP",
+  "nodesPassed": "Пройдено точек: {n}",
+  "price": "{p} зол.",
+  "runeTempered": "Руна усилена до {p}",
+  "runeFallback": "Руна+",
+  "tapToSpeedUp": "Коснись — быстрее",
+  "speedUp": "×3"
 }

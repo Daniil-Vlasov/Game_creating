@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { RARITIES, RUNES } from '../core/data';
+import { RARITIES, RUNES, STR } from '../core/data';
 import type { Card, SpellDef } from '../core/types';
 import { canvasTexture, Pix } from '../visual/pixelArt';
 import { envPalette, shade } from '../visual/palette';
@@ -20,7 +20,7 @@ export function cardView(scene: Phaser.Scene, x: number, y: number, card: Card):
   const bg = scene.add.image(0, 0, `card-${card.element}`);
   const icon = scene.add.image(0, -3, `icon-${ELEMENT_ICON[card.element]}`).setScale(2);
   const powerText = txt(scene, -CARD_W / 2 + 11, -CARD_H / 2 + 11, String(card.power), card.power >= 10 ? 9 : 11, '#fff4d0').setStroke('#1a1010', 2);
-  const runeName = RUNES.find((r) => r.power === card.power)?.name ?? 'Руна+';
+  const runeName = RUNES.find((r) => r.power === card.power)?.name ?? STR.runeFallback;
   const name = txt(scene, 0, CARD_H / 2 - 10.5, runeName, 7, '#f6eadc');
   c.add([glow, bg, icon, powerText, name]);
   c.card = card;

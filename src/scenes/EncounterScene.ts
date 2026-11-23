@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Sound } from '../audio/SoundEngine';
 import { ROUTE_CFG, STR, eventById } from '../core/data';
+import { fmt } from '../core/format';
 import { game } from '../core/GameState';
 import type { EventOption } from '../core/types';
 import { openDeckPicker } from '../ui/deckPicker';
@@ -86,7 +87,7 @@ export class EncounterScene extends Phaser.Scene {
       openDeckPicker(this, `${STR.temper}: +${ROUTE_CFG.campfire.upgradeAmount} ${STR.power}`, (c) => {
         game.upgradeCard(c.uid, ROUTE_CFG.campfire.upgradeAmount);
         Sound.cast(4);
-        this.done(STR.temper, [`Руна усилена до ${c.power}`]);
+        this.done(STR.temper, [fmt(STR.runeTempered, { p: c.power })]);
       });
     }));
   }

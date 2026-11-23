@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { Sound } from '../audio/SoundEngine';
 import { RARITIES, RULES, SHOP, STR } from '../core/data';
+import { fmt } from '../core/format';
 import { game } from '../core/GameState';
 import type { SpellDef } from '../core/types';
 import { openDeckPicker } from '../ui/deckPicker';
@@ -63,7 +64,7 @@ export class ShopScene extends Phaser.Scene {
           spellView(this, x, y - 44, s),
           txt(this, x, y - 12, s.name, 12, ui.text),
           txt(this, x, y + 20, s.desc, 9, s.penalty ? '#b03ad0' : ui.textDim).setWordWrapWidth(150),
-          button(this, x, y + 64, 120, 24, `${s.price} зол.`, () => this.buy(i)),
+          button(this, x, y + 64, 120, 24, fmt(STR.price, { p: s.price }), () => this.buy(i)),
         );
       } else {
         items.push(txt(this, x, y, STR.sold, 14, ui.textDim));
