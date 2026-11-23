@@ -12,6 +12,7 @@
  *                       Путь: <файл>.<ключ|id|индекс>...; элементы массивов можно адресовать по id.
  *                       Примеры: enemies.lich.hp=3000  enemies.wolf.rage.step=12  route.campfire.healPercent=35
  *                                cards.rules.heroMaxHp=100  spells.dragonHeart.price=14  combinations.firestorm.atkPower=30
+ *   --ban id1,id2       убрать заклинания из пула (абляция)
  *   --unique-events     эксперимент: повторное событие заменяется случайным ещё не посещённым (или пропуском)
  *   --aggr C            вес Атаки в оценке розыгрыша (по умолчанию 0.35 HP героя за 1 урон)
  *   --report FILE       записать markdown-отчёт
@@ -98,6 +99,14 @@ function applySet(expr: string): void {
   else (cur as Record<string, unknown>)[last] = value;
 }
 sets.forEach(applySet);
+// --ban id1,id2 — убрать заклинания из пула (абляция «насколько забег держится на этом заклинании»).
+const BANNED = (opt.ban && opt.ban !== 'true' ? opt.ban : '').split(',').filter(Boolean);
+for (const id of BANNED) {
+  const arr = spellsJson.spells as { id: string }[];
+  const i = arr.findIndex((x) => x.id === id);
+  if (i < 0) throw new Error(`--ban: нет заклинания ${id}`);
+  arr.splice(i, 1);
+}
 
 // ---------------------------------------------------------------- ГПСЧ
 
@@ -246,7 +255,7 @@ function smartEvent(st: GameState, ev: EventDef, allowSpells: boolean): number {
     case 'tavern': return st.hp <= st.maxHp - 15 && can(0) ? 0 : 1;
     case 'bard': return st.hp < st.maxHp * 0.7 || !can(1) ? 0 : 1;
     case 'altar': return allowSpells && st.hp > 40 && st.spells.length < RULES.maxSpellSlots && rareLeft(st, 'rare') ? 0 : last;
-    case 'idol': return allowSpells ? 0 : st.hp > 30 ? 1 : 0;
+    case 'idol': return allowSpells ? 0 : st.hp > 8 ? 1 : 0;
     default: return idx((_l, i) => can(i));
   }
 }
@@ -547,12 +556,12 @@ const f1 = (x: number) => (Number.isFinite(x) ? x.toFixed(1) : '—');
 const ENEMY_ORDER = ['slime', 'goblin', 'wolf', 'wraith', 'lich'];
 
 function enemyTable(S: Stats): string[] {
-  const rows = ['| Враг | Боёв | Ходов ср. | Ходов мед. | p90 | Урон по герою ср. | HP героя до боя | Смертей (доля боёв) | Бои > 12 ходов | Ваншот врага (1 ход) | Макс. удар за действие |', '|---|---|---|---|---|---|---|---|---|---|---|'];
+  const rows = ['| Враг | Боёв | Ходов ср. | Ходов мед. | p90 | Урон по герою ср. | HP героя до боя | Смертей (доля боёв) | Бои > 12 ходов | Ваншот врага (1 ход) | Макс. удар за действие | Закл. в слотах |', '|---|---|---|---|---|---|---|---|---|---|---|---|'];
   for (const id of ENEMY_ORDER) {
     const b = S.battles.filter((x) => x.enemy === id);
     if (!b.length) continue;
     const t = b.map((x) => x.turns).sort((a, c) => a - c);
-    rows.push(`| ${enemyById(id).name} | ${b.length} | ${f1(mean(t))} | ${median(t)} | ${t[Math.floor(t.length * 0.9)]} | ${f1(mean(b.map((x) => x.heroDmg)))} | ${f1(mean(b.map((x) => x.hpBefore)))} | ${pct(b.filter((x) => !x.won).length, b.length)} | ${pct(b.filter((x) => x.turns > 12).length, b.length)} | ${pct(b.filter((x) => x.oneShotKill).length, b.length)} | ${Math.max(...b.map((x) => x.maxHit))} |`);
+    rows.push(`| ${enemyById(id).name} | ${b.length} | ${f1(mean(t))} | ${median(t)} | ${t[Math.floor(t.length * 0.9)]} | ${f1(mean(b.map((x) => x.heroDmg)))} | ${f1(mean(b.map((x) => x.hpBefore)))} | ${pct(b.filter((x) => !x.won).length, b.length)} | ${pct(b.filter((x) => x.turns > 12).length, b.length)} | ${pct(b.filter((x) => x.oneShotKill).length, b.length)} | ${Math.max(...b.map((x) => x.maxHit))} | ${f1(mean(b.map((x) => x.spells)))} |`);
   }
   return rows;
 }
@@ -636,14 +645,14 @@ if (opt.brief === 'true') {
   for (const S of results) {
     const t = (id: string) => f1(mean(S.battles.filter((b) => b.enemy === id).map((b) => b.turns)));
     const d = (id: string) => { const b = S.battles.filter((x) => x.enemy === id); return pct(b.filter((x) => !x.won).length, b.length); };
-    console.log(`${S.name.padEnd(14)} win ${pct(S.wins, S.runs).padStart(6)} | turns sl ${t('slime')} gob ${t('goblin')} wolf ${t('wolf')} wr ${t('wraith')} lich ${t('lich')} | death% sl ${d('slime')} gob ${d('goblin')} wolf ${d('wolf')} wr ${d('wraith')} lich ${d('lich')} | reachLich ${pct(S.lichFights, S.runs)} fights ${f1(mean(S.fightsPerRun))}`);
+    console.log(`${S.name.padEnd(14)} win ${pct(S.wins, S.runs).padStart(6)} | turns sl ${t('slime')} gob ${t('goblin')} wolf ${t('wolf')} wr ${t('wraith')} lich ${t('lich')} | death% sl ${d('slime')} gob ${d('goblin')} wolf ${d('wolf')} wr ${d('wraith')} lich ${d('lich')} | reachLich ${pct(S.lichFights, S.runs)} fights ${f1(mean(S.fightsPerRun))} spells@wolf ${f1(mean(S.battles.filter((b) => b.enemy === 'wolf').map((b) => b.spells)))} @lich ${f1(mean(S.battles.filter((b) => b.enemy === 'lich').map((b) => b.spells)))} dmg@lich ${f1(mean(S.battles.filter((b) => b.enemy === 'lich').map((b) => b.heroDmg)))}`);
   }
-  if (sets.length) console.log(`  --set ${sets.join(' ')}`);
+  if (sets.length || BANNED.length) console.log(`  --set ${sets.join(' ')} ${BANNED.length ? '--ban ' + BANNED.join(',') : ''}`);
 } else {
   const lines: string[] = [];
   const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8')) as { version: string };
   lines.push(`# Отчёт по балансу — «Тропа Рун» v${pkg.version}`, '');
-  lines.push(`Дата: ${new Date().toISOString().slice(0, 10)} · забегов на политику: ${RUNS} · сид: ${SEED} · aggr: ${AGGR}${UNIQUE_EVENTS ? ' · --unique-events' : ''}${sets.length ? ` · подмены: \`${sets.join(' ')}\`` : ''} · время: ${elapsed} с`, '');
+  lines.push(`Дата: ${new Date().toISOString().slice(0, 10)} · забегов на политику: ${RUNS} · сид: ${SEED} · aggr: ${AGGR}${UNIQUE_EVENTS ? ' · --unique-events' : ''}${sets.length ? ` · подмены: \`${sets.join(' ')}\`` : ''}${BANNED.length ? ` · без заклинаний: ${BANNED.join(', ')}` : ''} · время: ${elapsed} с`, '');
   lines.push('Сгенерировано `npm run sim -- --runs ' + RUNS + ' --policy ' + policyArg + ' --seed ' + SEED + ' --report docs/balance-report.md`. Логика — `src/core/*`, данные — `src/data/*` (без Phaser).', '');
   lines.push('## 1. Сводка', '', ...SUMMARY_HEAD, ...results.map(summaryRow), '');
   lines.push(`Маршрут: ${route.paths} путей; боёв на пути — от **${route.minFights}** до ${route.maxFights} (включая Лича). Путь с минимумом боёв: ${route.minPath}.`, '');

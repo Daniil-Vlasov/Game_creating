@@ -63,9 +63,9 @@ export class Plaque {
   /** Подпрыгнуть без изменения числа (проклятая руна: «гашение»). */
   bump(flashColor?: number, grow = true): void {
     if (grow) this.bumps++;
-    const base = 1 + Math.min(0.3, this.bumps * 0.05);
+    const base = 1 + Math.min(0.15, this.bumps * 0.03);
     this.scene.tweens.killTweensOf(this.box);
-    this.box.setScale(base * 1.35).setY(this.baseY - 4);
+    this.box.setScale(base * 1.22).setY(this.baseY - 4);
     this.scene.tweens.add({ targets: this.box, scale: base, duration: 220, ease: 'Back.easeOut' });
     this.scene.tweens.add({ targets: this.box, y: this.baseY, duration: 220, ease: 'Bounce.easeOut' });
     this.flash.setFillStyle(flashColor ?? Phaser.Display.Color.HexStringToColor(this.color).color, 0.9);
@@ -119,7 +119,7 @@ export class ScoreRow {
     const v = Math.round(t.power * t.mult);
     this.total.setText('').setScale(1);
     this.scene.time.delayedCall(delay, () => {
-      this.total.setText(String(v)).setAlpha(1).setScale(2 + tier).setY(this.baseY);
+      this.total.setText(String(v)).setAlpha(1).setScale(1.5 + tier).setY(this.baseY);
       this.scene.tweens.add({ targets: this.total, scale: 1 + tier * 0.15, duration: 200 + tier * 60, ease: 'Back.easeOut' });
     });
   }

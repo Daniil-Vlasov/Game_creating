@@ -177,9 +177,10 @@ export class BattleScene extends Phaser.Scene {
     const spacing = Math.min(58, 470 / Math.max(1, n));
     this.hand.forEach((v, i) => {
       const x = W / 2 + 20 + (i - (n - 1) / 2) * spacing;
-      const y = HAND_Y - (this.isSelected(v) ? 14 : 0);
+      // во время подсчёта рука уезжает вниз и тускнеет, чтобы не мешать сыгранным рунам
+      const y = this.busy ? HAND_Y + 48 : HAND_Y - (this.isSelected(v) ? 14 : 0);
       v.setDepth(10 + i);
-      this.tweens.add({ targets: v, x, y, duration: 180, ease: 'Back.easeOut' });
+      this.tweens.add({ targets: v, x, y, alpha: this.busy ? 0.55 : 1, duration: 180, ease: 'Back.easeOut' });
     });
     this.deckText.setText(String(this.deck.remaining));
   }
@@ -269,6 +270,7 @@ export class BattleScene extends Phaser.Scene {
     views.forEach((v, i) => {
       v.glow.setVisible(false);
       this.tweens.add({ targets: v, x: W / 2 - (views.length - 1) * 29 + i * 58, y: 250, duration: 220, ease: 'Cubic.easeOut' });
+      v.setDepth(60 + i);
     });
     this.hand = this.hand.filter((v) => !views.includes(v));
     this.selected.clear();
@@ -308,6 +310,7 @@ export class BattleScene extends Phaser.Scene {
     this.updateEnemyUi();
     this.updateIntent(true);
     this.busy = false;
+    this.layoutHand();
     this.updatePreview();
   }
 
@@ -320,7 +323,7 @@ export class BattleScene extends Phaser.Scene {
     const total = steps.length;
     const weight = (k: string) => (k === 'spell' ? 1.4 : k === 'base' ? 1.2 : 1);
     const sumW = steps.reduce((acc, st) => acc + weight(st.kind), 0);
-    const unit = Phaser.Math.Clamp(1900 / sumW, 90, 230);
+    const unit = Phaser.Math.Clamp(1700 / sumW, 85, 230);
     const zero: Track = { power: 0, mult: 0 };
 
     this.comboText.setText(r.combo.name);
@@ -388,10 +391,10 @@ export class BattleScene extends Phaser.Scene {
     await this.wait(200 + tier * 60);
   }
 
-  /** Крупное число итога над панелью: удар, выдержка (длиннее на больших итогах), полёт в ряд. */
+  /** Крупное число итога на месте «= ИТОГ»: удар, выдержка (длиннее на больших итогах), оседание в ряд. */
   private async bigTotal(v: number, row: ScoreRow, tier: 0 | 1 | 2): Promise<void> {
-    const cx = W / 2;
-    const cy = 150;
+    const cx = row.total.x + 6;
+    const cy = row.total.y;
     const col = Phaser.Display.Color.HexStringToColor(row.color).color;
     const glow = this.add.image(cx, cy, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(col).setDepth(79).setScale(0.5).setAlpha(0.9);
     this.tweens.add({ targets: glow, scale: 2 + tier * 1.2, alpha: 0, duration: 380 + tier * 120, onComplete: () => glow.destroy() });
@@ -404,8 +407,8 @@ export class BattleScene extends Phaser.Scene {
     if (tier === 2) this.cameras.main.flash(120, 255, 230, 160, false);
     await this.tweenP({ targets: t, scale: 1, duration: 140, ease: 'Back.easeOut' });
     if (tier > 0) this.tweens.add({ targets: t, angle: { from: -3, to: 3 }, duration: 50, yoyo: true, repeat: tier * 2 });
-    await this.wait(120 + tier * 150);
-    await this.tweenP({ targets: t, x: row.total.x, y: row.total.y, scale: 0.4, alpha: 0.2, duration: 150, ease: 'Cubic.easeIn' });
+    await this.wait(100 + tier * 130);
+    await this.tweenP({ targets: t, x: row.total.x, y: row.total.y, scale: 0.4, alpha: 0.2, duration: 120, ease: 'Cubic.easeIn' });
     t.destroy();
   }
 
