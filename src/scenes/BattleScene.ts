@@ -10,7 +10,9 @@ import type { Card, EnemyActionType } from '../core/types';
 import { openCombosOverlay } from '../ui/combosOverlay';
 import { type Plaque, ScoreRow, scoreTier } from '../ui/scoreBoard';
 import { backdrop, cardTable, cardView, spellView, type CardView, type SpellView } from '../ui/views';
-import { type Button, H, W, button, fadeTo, floatText, panel, topBar, txt } from '../ui/widgets';
+import { SparkFx } from '../ui/sparkFx';
+import { TextPool } from '../ui/textPool';
+import { type Button, H, W, button, fadeTo, panel, topBar, txt } from '../ui/widgets';
 import { uiPalette } from '../visual/palette';
 import { addVignette, ambientTint, type Scenery } from '../visual/scenery';
 import { CARD_H, CARD_W } from '../visual/textures';
@@ -22,6 +24,10 @@ const DEF_COLOR = '#7ab8ff';
 const CURSE_COLOR = '#d080ff';
 const ENEMY_X = 540;
 const BAR_W = 100;
+/** Во сколько раз касание ускоряет анимацию текущего розыгрыша (подсчёт, удар, ход врага). */
+const FAST_SPEED = 3;
+/** Масштаб времени твинов во время хит-стопа. */
+const HIT_STOP_SCALE = 0.02;
 const INTENT_COLOR: Record<EnemyActionType, string> = {
   attack: '#ffb0a0', heavy: '#ff4a3a', multi: '#ffb0a0', steal: '#ffd860',
   block: DEF_COLOR, curse: CURSE_COLOR, buff: '#ffb030', heal: '#70e080',
@@ -40,6 +46,16 @@ export class BattleScene extends Phaser.Scene {
   private pendingCurse = 0;
   private curseMarks = new Map<CardView, Phaser.GameObjects.GameObject[]>();
   private busy = false;
+  /** Идёт анимация розыгрыша (касание экрана ускоряет её). */
+  private playing = false;
+  /** Текущая скорость анимаций сцены: 1 или FAST_SPEED. */
+  private speed = 1;
+  private hitStop = false;
+  private speedHint!: Phaser.GameObjects.Text;
+  private texts!: TextPool;
+  private fx!: SparkFx;
+  private slotFx: { frame: Phaser.GameObjects.Rectangle; glow: Phaser.GameObjects.Image }[] = [];
+  private totalGlow!: Phaser.GameObjects.Image;
 
   private hero!: Phaser.GameObjects.Image;
   private enemy!: Phaser.GameObjects.Image;
@@ -84,7 +100,12 @@ export class BattleScene extends Phaser.Scene {
     this.cursed = new Set();
     this.curseMarks = new Map();
     this.pendingCurse = 0;
-    this.tweens.timeScale = 1; // на случай рестарта сцены посреди хит-стопа
+    // на случай рестарта сцены посреди хит-стопа или ускоренного розыгрыша
+    this.playing = false;
+    this.hitStop = false;
+    this.speed = 1;
+    this.tweens.timeScale = 1;
+    this.time.timeScale = 1;
     this.foe = new EnemyState(e);
     this.shield = 0;
     this.discards = RULES.discardsPerBattle;
@@ -100,6 +121,11 @@ export class BattleScene extends Phaser.Scene {
     for (let i = 0; i < RULES.maxSpellSlots; i++) {
       this.slots.push(spellView(this, W / 2 - 84 + i * 42, 52, game.spells[i] ?? null));
     }
+    // Вспышки слотов переиспользуются (по паре рамка + свечение на слот)
+    this.slotFx = this.slots.map((sl) => ({
+      frame: this.add.rectangle(sl.x, sl.y, 36, 36).setDepth(55).setVisible(false),
+      glow: this.add.image(sl.x, sl.y, 'glow').setBlendMode(Phaser.BlendModes.ADD).setDepth(54).setVisible(false),
+    }));
 
     // Герой и враг
     this.lantern = this.add.image(112, 206, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(0xffc060).setScale(1.5).setAlpha(0.35 + d * 0.4);
@@ -145,7 +171,18 @@ export class BattleScene extends Phaser.Scene {
     this.hintText = txt(this, W / 2, 196, '', 9, '#fff4d0').setStroke('#000000', 3).setWordWrapWidth(300);
     this.turnText = txt(this, 36, 252, '', 9, '#fff4d0').setStroke('#000000', 3);
     // Справочник комбинаций (≥ 28px, левый верхний угол — там пусто)
-    button(this, 26, 46, 30, 30, STR.combosButton, () => openCombosOverlay(this));
+    button(this, 26, 46, 30, 30, STR.combosButton, () => {
+      if (!this.busy) openCombosOverlay(this); // оверлей не перекрывает анимацию подсчёта
+    });
+    // Подсказка ускорения: в просвете между сыгранными рунами (y≈250) и уехавшей вниз рукой
+    this.speedHint = txt(this, W / 2, 299, STR.tapToSpeedUp, 9, '#fff4d0').setStroke('#000000', 3).setDepth(130).setVisible(false);
+
+    // Переиспользуемые объекты «сока»: пул чисел, один эмиттер искр, свечение итога
+    this.totalGlow = this.add.image(0, 0, 'glow').setBlendMode(Phaser.BlendModes.ADD).setDepth(79).setVisible(false);
+    this.texts = new TextPool(this);
+    this.fx = new SparkFx(this);
+    this.input.on('pointerdown', this.onTapSpeedUp, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.input.off('pointerdown', this.onTapSpeedUp, this));
 
     this.updateEnemyUi();
     this.updateIntent(false);
@@ -263,6 +300,7 @@ export class BattleScene extends Phaser.Scene {
   private async playSelected(): Promise<void> {
     if (this.busy || this.selected.size === 0) return;
     this.busy = true;
+    this.startPlay();
     this.updatePreview();
     const views = this.hand.filter((v) => this.selected.has(v));
     const result = scorePlay(views.map((v) => v.card), this.hand.length - views.length, game.spells, this.cursed);
@@ -282,7 +320,7 @@ export class BattleScene extends Phaser.Scene {
     // Применение
     if (result.hpLoss > 0) {
       game.heal(-result.hpLoss);
-      floatText(this, this.hero.x, this.hero.y - 56, `−${result.hpLoss}`, '#d080ff');
+      this.texts.float(this.hero.x, this.hero.y - 56, `−${result.hpLoss}`, '#d080ff');
       this.refreshBar();
     }
     this.shield = result.shield;
@@ -309,6 +347,7 @@ export class BattleScene extends Phaser.Scene {
     const phase = this.foe.endTurn();
     if (phase) await this.phaseBanner(phase);
     this.updateEnemyUi();
+    this.endPlay();
     this.updateIntent(true);
     this.busy = false;
     this.layoutHand();
@@ -362,7 +401,7 @@ export class BattleScene extends Phaser.Scene {
           if (v) this.extinguish(v, step.card.power);
           row.power.bump(0xa040e0, false);
         } else if (v) {
-          floatText(this, v.x, v.y - 44, `+${step.power}`, step.toAtk ? ATK_COLOR : DEF_COLOR, 13);
+          this.texts.float(v.x, v.y - 44, `+${step.power}`, step.toAtk ? ATK_COLOR : DEF_COLOR, 13);
           const col = step.toAtk ? 0xff7a5a : 0x7ab8ff;
           this.sparks({ x: v.x, y: v.y - 30 }, row.power.anchor, col, 5, travel);
           this.time.delayedCall(travel, () => changed.forEach((c) => c.plaque.tickTo(c.value, dt * 0.5)));
@@ -371,7 +410,7 @@ export class BattleScene extends Phaser.Scene {
         const slot = this.slots[step.slot];
         const rc = Phaser.Display.Color.HexStringToColor(RARITIES[step.spell.rarity].color).color;
         this.slotFlash(slot, rc);
-        floatText(this, slot.x, slot.y + 26, step.text, '#ffe070', 10);
+        this.texts.float(slot.x, slot.y + 26, step.text, '#ffe070', 10);
         Sound.cast(step.slot);
         if (changed.length === 0) this.burst(slot.x, slot.y, rc, 8);
         for (const c of changed) this.sparks({ x: slot.x, y: slot.y }, c.plaque.anchor, rc, 8, travel);
@@ -397,10 +436,12 @@ export class BattleScene extends Phaser.Scene {
     const cx = row.total.x + 6;
     const cy = row.total.y;
     const col = Phaser.Display.Color.HexStringToColor(row.color).color;
-    const glow = this.add.image(cx, cy, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(col).setDepth(79).setScale(0.5).setAlpha(0.9);
-    this.tweens.add({ targets: glow, scale: 2 + tier * 1.2, alpha: 0, duration: 380 + tier * 120, onComplete: () => glow.destroy() });
+    const glow = this.totalGlow;
+    this.tweens.killTweensOf(glow);
+    glow.setPosition(cx, cy).setTint(col).setScale(0.5).setAlpha(0.9).setVisible(true);
+    this.tweens.add({ targets: glow, scale: 2 + tier * 1.2, alpha: 0, duration: 380 + tier * 120, onComplete: () => glow.setVisible(false) });
     const size = [22, 30, 38][tier];
-    const t = txt(this, cx, cy, String(v), size, tier === 2 ? '#fff4d0' : row.color).setStroke('#000000', 4).setDepth(80);
+    const t = this.texts.get(cx, cy, String(v), size, tier === 2 ? '#fff4d0' : row.color, 4, 80);
     if (tier === 2) t.setTint(0xffe070, 0xffe070, 0xff7a5a, 0xff7a5a);
     t.setScale(0.3);
     this.burst(cx, cy, col, 8 + tier * 10, 40 + tier * 30);
@@ -410,27 +451,24 @@ export class BattleScene extends Phaser.Scene {
     if (tier > 0) this.tweens.add({ targets: t, angle: { from: -3, to: 3 }, duration: 50, yoyo: true, repeat: tier * 2 });
     await this.wait(100 + tier * 130);
     await this.tweenP({ targets: t, x: row.total.x, y: row.total.y, scale: 0.4, alpha: 0.2, duration: 120, ease: 'Cubic.easeIn' });
-    t.destroy();
+    this.texts.release(t);
   }
 
   /** Проклятая руна: её Сила вспыхивает фиолетовым и «гаснет» в 0, вверх уходит дымок. */
   private extinguish(v: CardView, power: number): void {
     const x = v.x;
     const y = v.y - 44;
-    const t = txt(this, x, y, `+${power}`, 13, CURSE_COLOR).setStroke('#000000', 3).setDepth(100);
+    const t = this.texts.get(x, y, `+${power}`, 13, CURSE_COLOR);
     this.tweens.add({
       targets: t, alpha: 0.2, duration: 45, yoyo: true, repeat: 2,
       onComplete: () => {
-        this.tweens.add({ targets: t, scaleX: 1.6, scaleY: 0.1, alpha: 0, duration: 120, onComplete: () => t.destroy() });
-        const z = txt(this, x, y, '0', 15, CURSE_COLOR).setStroke('#000000', 3).setDepth(100).setScale(1.8);
+        this.tweens.add({ targets: t, scaleX: 1.6, scaleY: 0.1, alpha: 0, duration: 120, onComplete: () => this.texts.release(t) });
+        const z = this.texts.get(x, y, '0', 15, CURSE_COLOR).setScale(1.8);
         this.tweens.add({ targets: z, scale: 1, duration: 140, ease: 'Back.easeOut' });
-        this.tweens.add({ targets: z, y: y - 18, alpha: 0, delay: 360, duration: 400, onComplete: () => z.destroy() });
+        this.tweens.add({ targets: z, y: y - 18, alpha: 0, delay: 360, duration: 400, onComplete: () => this.texts.release(z) });
       },
     });
-    for (let i = 0; i < 6; i++) {
-      const p = this.add.rectangle(x + Phaser.Math.Between(-14, 14), v.y - 10, 2, 2, i % 2 ? 0x5a1a7a : 0xa040e0).setDepth(99);
-      this.tweens.add({ targets: p, y: p.y - Phaser.Math.Between(20, 36), x: p.x + Phaser.Math.Between(-6, 6), alpha: 0, delay: i * 25, duration: 420, onComplete: () => p.destroy() });
-    }
+    this.fx.smoke(x, v.y - 10, [0xa040e0, 0x5a1a7a]);
   }
 
   /** Вспышка рамки слота цветом редкости. */
@@ -438,45 +476,22 @@ export class BattleScene extends Phaser.Scene {
     this.tweens.killTweensOf(slot);
     slot.setScale(1.3).setAngle(6);
     this.tweens.add({ targets: slot, scale: 1, angle: 0, duration: 200, ease: 'Back.easeOut' });
-    const frame = this.add.rectangle(slot.x, slot.y, 36, 36).setStrokeStyle(2, color).setDepth(55);
-    const glow = this.add.image(slot.x, slot.y, 'glow').setBlendMode(Phaser.BlendModes.ADD).setTint(color).setDepth(54).setScale(0.6);
-    this.tweens.add({ targets: frame, scale: 1.6, alpha: 0, duration: 280, ease: 'Cubic.easeOut', onComplete: () => frame.destroy() });
-    this.tweens.add({ targets: glow, scale: 1.5, alpha: 0, duration: 320, onComplete: () => glow.destroy() });
+    const { frame, glow } = this.slotFx[this.slots.indexOf(slot)];
+    this.tweens.killTweensOf([frame, glow]);
+    frame.setStrokeStyle(2, color).setScale(1).setAlpha(1).setVisible(true);
+    glow.setTint(color).setScale(0.6).setAlpha(1).setVisible(true);
+    this.tweens.add({ targets: frame, scale: 1.6, alpha: 0, duration: 280, ease: 'Cubic.easeOut', onComplete: () => frame.setVisible(false) });
+    this.tweens.add({ targets: glow, scale: 1.5, alpha: 0, duration: 320, onComplete: () => glow.setVisible(false) });
   }
 
-  /** Искры по дуге (квадратичная Безье) из точки к счётчику. */
+  /** Искры по дуге (квадратичная Безье) из точки к счётчику — через общий эмиттер сцены. */
   private sparks(from: { x: number; y: number }, to: { x: number; y: number }, color: number, n: number, ms: number): void {
-    for (let i = 0; i < n; i++) {
-      const sz = i % 3 === 0 ? 3 : 2;
-      const sx = from.x + Phaser.Math.Between(-8, 8);
-      const sy = from.y + Phaser.Math.Between(-6, 6);
-      const mx = (sx + to.x) / 2 + Phaser.Math.Between(-50, 50);
-      const my = Math.min(sy, to.y) - Phaser.Math.Between(10, 40);
-      const p = this.add.rectangle(sx, sy, sz, sz, i % 2 ? 0xffffff : color).setDepth(60);
-      const k = { t: 0 };
-      this.tweens.add({
-        targets: k, t: 1, delay: i * 10, duration: Math.max(60, ms - i * 10), ease: 'Sine.easeIn',
-        onUpdate: () => {
-          const u = 1 - k.t;
-          p.setPosition(Math.round(u * u * sx + 2 * u * k.t * mx + k.t * k.t * to.x), Math.round(u * u * sy + 2 * u * k.t * my + k.t * k.t * to.y));
-        },
-        onComplete: () => p.destroy(),
-      });
-    }
+    this.fx.arc(from, to, color, n, ms);
   }
 
   /** Радиальный разлёт искр. */
   private burst(x: number, y: number, color: number, n: number, radius = 30): void {
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2 + Math.random() * 0.4;
-      const d = radius * (0.6 + Math.random() * 0.6);
-      const sz = i % 3 === 0 ? 3 : 2;
-      const p = this.add.rectangle(x, y, sz, sz, i % 2 ? 0xffffff : color).setDepth(81);
-      this.tweens.add({
-        targets: p, x: x + Math.cos(a) * d, y: y + Math.sin(a) * d * 0.7, alpha: 0,
-        duration: 260 + Math.random() * 200, ease: 'Cubic.easeOut', onComplete: () => p.destroy(),
-      });
-    }
+    this.fx.burst(x, y, color, n, radius);
   }
 
   /** Удар героя: тряска, хит-стоп и вспышка пропорционально итогу; крупное число урона. */
@@ -485,10 +500,10 @@ export class BattleScene extends Phaser.Scene {
     const w = Phaser.Math.Clamp((Math.log10(Math.max(1, attack)) - 1) / 2, 0, 1); // 10→0, 50→0.35, 300→0.74, 1000→1
     await this.tweenP({ targets: this.hero, x: 170, duration: 140, ease: 'Cubic.easeIn' });
     const r = this.foe.takeAttack(attack);
-    if (r.absorbed > 0) floatText(this, this.enemy.x + 34, this.enemy.y - 110, `⛨ −${r.absorbed}`, DEF_COLOR, 12);
+    if (r.absorbed > 0) this.texts.float(this.enemy.x + 34, this.enemy.y - 110, `⛨ −${r.absorbed}`, DEF_COLOR, 12);
     if (r.broke) {
       Sound.shieldBreak();
-      floatText(this, this.enemy.x, this.enemy.y - 126, STR.shieldBroken, '#d8ecff', 12);
+      this.texts.float(this.enemy.x, this.enemy.y - 126, STR.shieldBroken, '#d8ecff', 12);
     }
     if (r.damage > 0) {
       Sound.hit(Math.min(2, 1 + r.damage / 300));
@@ -498,9 +513,9 @@ export class BattleScene extends Phaser.Scene {
       const dmg = this.damageNumber(r.damage, tier);
       this.burst(this.enemy.x, this.enemy.y - 40, 0xff7a5a, 6 + tier * 8, 30 + tier * 20);
       // Хит-стоп: все твины почти замирают, камера продолжает трястись
-      this.tweens.timeScale = 0.02;
+      this.setHitStop(true);
       await this.wait(Math.round(60 + 60 * w));
-      this.tweens.timeScale = 1;
+      this.setHitStop(false); // возврат к текущей скорости (1 или ускоренной), а не к 1
       dmg();
       this.time.delayedCall(60 + tier * 30, () => this.enemy.clearTint());
       this.tweens.add({ targets: this.enemy, x: ENEMY_X + 4 + tier * 4, duration: 60, yoyo: true, ease: 'Cubic.easeOut' });
@@ -513,10 +528,10 @@ export class BattleScene extends Phaser.Scene {
   private damageNumber(dmg: number, tier: 0 | 1 | 2): () => void {
     const size = [20, 28, 36][tier];
     const y = this.enemy.y - 96;
-    const t = txt(this, this.enemy.x, y, `−${dmg}`, size, tier === 2 ? '#ffe070' : ATK_COLOR).setStroke('#000000', 4).setDepth(100).setScale(1.6);
+    const t = this.texts.get(this.enemy.x, y, `−${dmg}`, size, tier === 2 ? '#ffe070' : ATK_COLOR, 4, 100).setScale(1.6);
     return () => {
       this.tweens.add({ targets: t, scale: 1, duration: 160, ease: 'Back.easeOut' });
-      this.tweens.add({ targets: t, y: y - 26, alpha: 0, delay: 450 + tier * 200, duration: 500, ease: 'Cubic.easeIn', onComplete: () => t.destroy() });
+      this.tweens.add({ targets: t, y: y - 26, alpha: 0, delay: 450 + tier * 200, duration: 500, ease: 'Cubic.easeIn', onComplete: () => this.texts.release(t) });
     };
   }
 
@@ -543,7 +558,7 @@ export class BattleScene extends Phaser.Scene {
         this.updateEnemyUi();
         break;
       case 'rage':
-        floatText(this, ex, ey - 130, `${STR.rage} +${ev.added}`, '#ff6a4a', 11);
+        this.texts.float(ex, ey - 130, `${STR.rage} +${ev.added}`, '#ff6a4a', 11);
         this.updateRage();
         await this.wait(160);
         break;
@@ -552,7 +567,7 @@ export class BattleScene extends Phaser.Scene {
         await this.tweenP({ targets: this.enemy, x: ENEMY_X - 70, duration: multi ? 100 : 160, ease: 'Cubic.easeIn' });
         if (ev.blocked > 0) {
           setShield(getShield() - ev.blocked);
-          floatText(this, this.hero.x + 30, this.hero.y - 70, `⛨ ${ev.blocked}`, DEF_COLOR, 12);
+          this.texts.float(this.hero.x + 30, this.hero.y - 70, `⛨ ${ev.blocked}`, DEF_COLOR, 12);
           this.shieldText.setText(getShield() > 0 ? `⛨ ${getShield()}` : '');
         }
         if (ev.taken > 0) {
@@ -560,7 +575,7 @@ export class BattleScene extends Phaser.Scene {
           Sound.hurt();
           this.hero.setTintFill(0xff4040);
           this.cameras.main.shake(140, 0.008);
-          floatText(this, this.hero.x - 8 + ev.index * 14, this.hero.y - 56 - ev.index * 8, `−${ev.taken}`, '#ff5050', 18);
+          this.texts.float(this.hero.x - 8 + ev.index * 14, this.hero.y - 56 - ev.index * 8, `−${ev.taken}`, '#ff5050', 18);
           this.time.delayedCall(120, () => this.hero.clearTint());
         } else Sound.block();
         this.refreshBar();
@@ -568,19 +583,19 @@ export class BattleScene extends Phaser.Scene {
         break;
       }
       case 'block':
-        floatText(this, ex, ey - 110, `⛨ ${ev.shield}`, DEF_COLOR, 14);
+        this.texts.float(ex, ey - 110, `⛨ ${ev.shield}`, DEF_COLOR, 14);
         this.tweens.add({ targets: this.enemy, scaleX: this.enemy.scaleX * 1.08, duration: 120, yoyo: true });
         this.updateEnemyUi();
         await this.wait(380);
         break;
       case 'buff':
-        floatText(this, ex, ey - 110, `+${ev.value}`, INTENT_COLOR.buff, 14);
+        this.texts.float(ex, ey - 110, `+${ev.value}`, INTENT_COLOR.buff, 14);
         this.enemy.setTintFill(0xffb030);
         this.time.delayedCall(140, () => this.enemy.clearTint());
         await this.wait(380);
         break;
       case 'heal':
-        floatText(this, ex, ey - 110, fmt(STR.enemyHealed, { v: ev.amount }), INTENT_COLOR.heal, 14);
+        this.texts.float(ex, ey - 110, fmt(STR.enemyHealed, { v: ev.amount }), INTENT_COLOR.heal, 14);
         this.enemy.setTintFill(0x70e080);
         this.time.delayedCall(140, () => this.enemy.clearTint());
         this.updateEnemyUi();
@@ -590,13 +605,13 @@ export class BattleScene extends Phaser.Scene {
         if (ev.gold > 0) {
           game.gold = Math.max(0, game.gold - ev.gold);
           Sound.stealGold();
-          floatText(this, this.hero.x, this.hero.y - 84, fmt(STR.goldStolen, { g: ev.gold }), '#ffd860', 13);
+          this.texts.float(this.hero.x, this.hero.y - 84, fmt(STR.goldStolen, { g: ev.gold }), '#ffd860', 13);
           this.refreshBar();
           await this.wait(300);
         }
         break;
       case 'stealFailed':
-        floatText(this, this.hero.x + 20, this.hero.y - 84, STR.stealFailed, '#ffd860', 12);
+        this.texts.float(this.hero.x + 20, this.hero.y - 84, STR.stealFailed, '#ffd860', 12);
         await this.wait(300);
         break;
       case 'curse':
@@ -615,7 +630,7 @@ export class BattleScene extends Phaser.Scene {
       this.cursed.add(v.card.uid);
       this.markCursed(v);
     }
-    floatText(this, W / 2, HAND_Y - 60, STR.cursedRune, CURSE_COLOR, 12);
+    this.texts.float(W / 2, HAND_Y - 60, STR.cursedRune, CURSE_COLOR, 12);
     this.updatePreview();
   }
 
@@ -696,6 +711,7 @@ export class BattleScene extends Phaser.Scene {
   // ---------------- итоги ----------------
 
   private victory(): void {
+    this.endPlay();
     Sound.victory();
     this.tweens.add({ targets: this.enemy, alpha: 0, scaleY: 0.1, duration: 500 });
     const final = game.isLastNode;
@@ -710,6 +726,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   private defeat(): void {
+    this.endPlay();
     Sound.defeat();
     Sound.stopMusic();
     this.tweens.add({ targets: this.hero, angle: -90, alpha: 0.5, duration: 600 });
@@ -727,6 +744,50 @@ export class BattleScene extends Phaser.Scene {
     txt(this, W / 2, H / 2 - 36, title, 18, ui.text).setDepth(202);
     txt(this, W / 2, H / 2 - 6, sub, 12, ui.textDim).setDepth(202);
     button(this, W / 2, H / 2 + 38, 160, 30, btn, onClick).setDepth(202);
+  }
+
+  // ---------------- скорость анимации ----------------
+
+  /** Начало розыгрыша: скорость 1 и подсказка «Коснись — быстрее». */
+  private startPlay(): void {
+    this.playing = true;
+    this.setSpeed(1);
+    this.tweens.killTweensOf(this.speedHint);
+    this.speedHint.setText(STR.tapToSpeedUp).setVisible(true).setAlpha(0.9).setScale(1);
+    this.tweens.add({ targets: this.speedHint, alpha: 0.45, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+  }
+
+  private endPlay(): void {
+    this.playing = false;
+    this.setSpeed(1);
+    this.tweens.killTweensOf(this.speedHint);
+    this.speedHint.setVisible(false);
+  }
+
+  /** Касание экрана во время розыгрыша — всё ×FAST_SPEED до конца этого розыгрыша. */
+  private onTapSpeedUp(): void {
+    if (!this.playing || this.speed !== 1) return;
+    this.setSpeed(FAST_SPEED);
+    this.tweens.killTweensOf(this.speedHint);
+    this.speedHint.setText(STR.speedUp).setAlpha(1).setScale(1.4);
+    this.tweens.add({ targets: this.speedHint, scale: 1, duration: 160, ease: 'Back.easeOut' });
+  }
+
+  /** Скорость твинов, таймеров (wait, delayedCall) и частиц сцены. Во время хит-стопа твины остаются замершими. */
+  private setSpeed(s: number): void {
+    this.speed = s;
+    this.time.timeScale = s;
+    if (!this.hitStop) this.applyTweenScale(s);
+  }
+
+  private setHitStop(on: boolean): void {
+    this.hitStop = on;
+    this.applyTweenScale(on ? HIT_STOP_SCALE : this.speed);
+  }
+
+  private applyTweenScale(s: number): void {
+    this.tweens.timeScale = s;
+    this.fx.setTimeScale(s);
   }
 
   // ---------------- утилиты ----------------

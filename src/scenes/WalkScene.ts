@@ -8,8 +8,11 @@ import { backdrop } from '../ui/views';
 import { ambientTint } from '../visual/scenery';
 import { H, W, fadeTo, floatText, panel, topBar, txt } from '../ui/widgets';
 
-/** Сколько мира после развилки до выбранной точки (≈ 3 с ходьбы). */
-const AFTER_FORK = 300;
+/**
+ * Сколько мира после развилки до выбранной точки (≈ 2 с ходьбы). Путь сегмента:
+ * старт x=60 → развилка (segmentLength − 70) → точка (+AFTER_FORK) = segmentLength − 130 + AFTER_FORK ≈ 700 px ≈ 7 с.
+ */
+const AFTER_FORK = 200;
 const HERO_SPEED = 0.1; // px/мс
 const FORK_CARD_W = 150;
 const FORK_CARD_H = 124;
@@ -55,7 +58,8 @@ export class WalkScene extends Phaser.Scene {
     if (!fork && game.choice < 0) game.choose(game.options[0]);
     const len = ROUTE_CFG.segmentLength;
     this.forkX = fork ? len - 70 : -1;
-    this.poiX = fork ? this.forkX + AFTER_FORK : len - 70;
+    // без развилки путь той же длины (≈ 7 с), просто без остановки на выбор
+    this.poiX = len - 70 + AFTER_FORK;
     this.stopX = fork ? this.forkX : this.poiX;
     const worldW = this.poiX + 70;
 

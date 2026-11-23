@@ -13,6 +13,9 @@ export function scoreTier(total: number): 0 | 1 | 2 {
   return total >= 1000 ? 2 : total >= 300 ? 1 : 0;
 }
 
+/** Минимальный интервал перерисовки числа плашки во время тика (мс). */
+const LABEL_STEP_MS = 40;
+
 /** Плашка-счётчик: тёмная табличка с цветной рамкой, число «тикает» при изменении. */
 export class Plaque {
   readonly box: Phaser.GameObjects.Container;
@@ -24,6 +27,7 @@ export class Plaque {
   private bumps = 0;
   private counter = { v: 0 };
   private tickTween?: Phaser.Tweens.Tween;
+  private labelAt = 0;
 
   constructor(private scene: Phaser.Scene, x: number, y: number, w: number, private color: string) {
     const col = Phaser.Display.Color.HexStringToColor(color).color;
@@ -54,10 +58,22 @@ export class Plaque {
     this.counter.v = from;
     this.tickTween = this.scene.tweens.add({
       targets: this.counter, v, duration: Math.max(60, ms), ease: 'Cubic.easeOut',
-      onUpdate: () => this.label.setText(fmtNum(this.counter.v, dec)),
-      onComplete: () => this.label.setText(fmtNum(v, dec)),
+      onUpdate: () => this.showLabel(fmtNum(this.counter.v, dec), false),
+      onComplete: () => this.showLabel(fmtNum(v, dec), true),
     });
     this.bump(flashColor);
+  }
+
+  /**
+   * Перерисовка Text — это canvas ×3 + загрузка текстуры в GPU, поэтому во время тика число обновляется
+   * не чаще раза в LABEL_STEP_MS и только если строка изменилась; финальное значение — всегда.
+   */
+  private showLabel(s: string, force: boolean): void {
+    if (s === this.label.text) return;
+    const now = this.scene.time.now;
+    if (!force && now - this.labelAt < LABEL_STEP_MS) return;
+    this.labelAt = now;
+    this.label.setText(s);
   }
 
   /** Подпрыгнуть без изменения числа (проклятая руна: «гашение»). */
